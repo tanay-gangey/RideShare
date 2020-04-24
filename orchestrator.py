@@ -22,7 +22,7 @@ class readReq:
             auto_ack=True)
 
     def onResponse(self, ch, method, props, body):
-        if self.corr_id == props.correlation_id:
+        if self.corID == props.correlation_id:
             self.response = body
 
     def publish(self, query):
@@ -33,7 +33,7 @@ class readReq:
             routing_key='readQ',
             properties=pika.BasicProperties(
                 reply_to=self.callback_queue,
-                correlation_id=self.corr_id,
+                correlation_id=self.corID,
                 delivery_mode=2), 
             body=query)
         while self.response is None:
@@ -56,7 +56,7 @@ class writeReq:
             auto_ack=True)
 
     def onResponse(self, ch, method, props, body):
-        if self.corr_id == props.correlation_id:
+        if self.corID == props.correlation_id:
             self.response = body
 
     def publish(self, query):
@@ -67,7 +67,7 @@ class writeReq:
             routing_key='writeQ',
             properties=pika.BasicProperties(
                 reply_to=self.callback_queue,
-                correlation_id=self.corr_id,
+                correlation_id=self.corID,
                 delivery_mode=2),
             body = query)
         while self.response is None:
