@@ -1,62 +1,117 @@
-import sys
-import json, requests, collections
-from datetime import datetime
-from flask import Flask, request, jsonify
+import json
 import pika
+import requests
+
+from datetime import datetime
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
-response = None
-corr_id = None
-def on_response(ch, method, props, body):
-	global response
-	if(corr_id  = props.correlation_id):
-		response = body
-	
+
+class readReq:
+
+    def __init__(self):
+        self.connection = pika.BlockingConnection(
+            pika.ConnectionParameters(host='localhost'))
+        self.channel = self.connection.channel()
+        result = self.channel.queue_declare(queue='', durable=True)
+        self.callbackQ = result.method.queue
+        self.channel.basic_consume(
+            queue=self.callbackQ,
+            on_message_callback=self.onResponse,
+            auto_ack=True)
+
+    def onResponse(self, ch, method, props, body):
+        if self.corr_id == props.correlation_id:
+            self.response = body
+
+    def publish(self, query):
+        self.response = None
+        self.corID = str(uuid.uuid4())
+        self.channel.basic_publish(
+            exchange='',
+            routing_key='readQ',
+            properties=pika.BasicProperties(
+                reply_to=self.callback_queue,
+                correlation_id=self.corr_id,
+                delivery_mode=2), 
+            body=query)
+        while self.response is None:
+            self.connection.process_data_events()
+        self.connection.close()
+        return self.response
 
 
-connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
-channel = connection.channel()
-result = channel.queue_declare(queue='', exclusive=True)
-callback_queue = result.method.queue
-channel.basic_consume(queue=callback_queue,on_message_callback = on_response,auto_ack=True)
+class writeReq:
+    
+    def __init__(self):
+        self.connection = pika.BlockingConnection(
+            pika.ConnectionParameters(host='localhost'))
+        self.channel = self.connection.channel()
+        result = self.channel.queue_declare(queue='', durable=True)
+        self.callbackQ = result.method.queue
+        self.channel.basic_consume(
+            queue=self.callbackQ,
+            on_message_callback=self.onResponse,
+            auto_ack=True)
 
-@app.route('/api/v1/db/read', methods = ["POST"])
-def readfromDB():
-	global response,corr_id
-	response = None
-	corr_id = str(uuid.uuid4())
-	data = request.get_json()
-	channel.basic_publish(exchange='',routing_key='readQueue',properties=pika.BasicProperties(reply_to=callback_queue,correlation_id=corr_id), body=json.dumps(data))
-	while response is None:
-		connection.process_data_events()
-	return response
+    def onResponse(self, ch, method, props, body):
+        if self.corr_id == props.correlation_id:
+            self.response = body
 
-@app.route('/api/v1/db/write', methods = ["POST"])
-def writetoDB():
-	global response,corr_id
-	response = None
-	corr_id = str(uuid.uuid4())
-	data = request.get_json()
-	channel.basic_publish(exchange='',routing_key='writeQueue',properties=pika.BasicProperties(reply_to=callback_queue,correlation_id=corr_id), body=json.dumps(data))
-	while response is None:
-		connection.process_data_events()
-	return response
+    def publish(self, query):
+        self.response = None
+        self.corID = str(uuid.uuid4())
+        self.channel.basic_publish(
+            exchange='',
+            routing_key='writeQ',
+            properties=pika.BasicProperties(
+                reply_to=self.callback_queue,
+                correlation_id=self.corr_id,
+                delivery_mode=2),
+            body = query)
+        while self.response is None:
+            self.connection.process_data_events()
+        self.connection.close()
+        return self.response
 
 
+@app.route('/api/v1/db/read', methods=["POST"])
+def readDB():
+    response = None
+    if request.method == "POST:
+        data = request.get_json()
+        newReadReq = readReq()
+        response = newReadReq.publish(data)
+        print("[x] Sent [Read] %r" % message)
+        return response, 200
+    return reponse, 405
 
-@app.route('/api/v1/db/clear', methods = ["POST"])
+
+@app.route('/api/v1/db/write', methods=["POST"])
+def writeDB():
+    response = None
+	if request.method == "POST":
+		data = request.get_json()
+		newWriteReq = writeReq()
+		response = newWriteReq.publish(data)
+		print("[x] Sent [Write] %r" % message)
+		return response, 200
+	return response, 405
+
+
+@app.route('/api/v1/db/clear', methods=["POST"])
 def clearDB():
-	global response,corr_id
-	response = None
-	corr_id = str(uuid.uuid4())
-	data = request.get_json()
-	channel.basic_publish(exchange='',routing_key='writeQueue',properties=pika.BasicProperties(reply_to=callback_queue,correlation_id=corr_id), body=json.dumps(data))
-	while response is None:
-		connection.process_data_events()
-	return response
+    response = None
+	if request.method == "POST":
+    	data = request.get_json()
+		newClearReq = writeReq()
+		response = newClearReq.publish(data)
+		print("[x] Sent [Clear] %r" % message)
+		return response, 200
+	return response, 405
 
 
 if __name__ == '__main__':
     app.debug = True
-    app.run(host = '0.0.0.0', port='80')
+    app.run(host='0.0.0.0', port='80')
