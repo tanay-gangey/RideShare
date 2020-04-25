@@ -9,10 +9,8 @@ app = Flask(__name__)
 
 
 class readReq:
-
     def __init__(self):
-        self.connection = pika.BlockingConnection(
-            pika.ConnectionParameters(host='localhost'))
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
         self.channel = self.connection.channel()
         result = self.channel.queue_declare(queue='', durable=True)
         self.callbackQ = result.method.queue
@@ -42,11 +40,9 @@ class readReq:
         return self.response
 
 
-class writeReq:
-    
+class writeReq:   
     def __init__(self):
-        self.connection = pika.BlockingConnection(
-            pika.ConnectionParameters(host='localhost'))
+        self.connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
         self.channel = self.connection.channel()
         result = self.channel.queue_declare(queue='', durable=True)
         self.callbackQ = result.method.queue
@@ -79,7 +75,7 @@ class writeReq:
 @app.route('/api/v1/db/read', methods=["POST"])
 def readDB():
     response = None
-    if request.method == "POST:
+    if request.method == "POST":
         data = request.get_json()
         newReadReq = readReq()
         response = newReadReq.publish(data)
@@ -91,25 +87,25 @@ def readDB():
 @app.route('/api/v1/db/write', methods=["POST"])
 def writeDB():
     response = None
-	if request.method == "POST":
-		data = request.get_json()
-		newWriteReq = writeReq()
-		response = newWriteReq.publish(data)
-		print("[x] Sent [Write] %r" % message)
-		return response, 200
-	return response, 405
+    if request.method == "POST":
+        data = request.get_json()
+        newWriteReq = writeReq()
+        response = newWriteReq.publish(data)
+        print("[x] Sent [Write] %r" % message)
+        return response, 200
+    return response, 405
 
 
 @app.route('/api/v1/db/clear', methods=["POST"])
 def clearDB():
     response = None
-	if request.method == "POST":
-    	data = request.get_json()
-		newClearReq = writeReq()
-		response = newClearReq.publish(data)
-		print("[x] Sent [Clear] %r" % message)
-		return response, 200
-	return response, 405
+    if request.method == "POST":
+        data = request.get_json()
+        newClearReq = writeReq()
+        response = newClearReq.publish(data)
+        print("[x] Sent [Clear] %r" % message)
+        return response, 200
+    return response, 405
 
 
 if __name__ == '__main__':
