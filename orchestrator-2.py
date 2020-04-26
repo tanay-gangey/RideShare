@@ -11,6 +11,7 @@ c = docker.APIClient()
 
 #add self parameter and add this function to the class and change the counter and timer variables
 # i'm assuming the container parameter for this fn refers to the list of slave containers, it's a list of container objects 
+#havent called this function anywhere btw, where would you call this?
 def spawncheck(count,containers):
 	mul_20 = count%20 
 	mul_20+=1 #this is how many slaves we should have
@@ -21,9 +22,10 @@ def spawncheck(count,containers):
 			num_slaves-=1 #reduce number of slaves
 	else if(num_slaves<mul_20):
 		while((mul20-num_slaves)!=0):#while the number we have is equal to the number needed
-			c.create_container() #https://docker-py.readthedocs.io/en/stable/api.html #not quite sure how this function works so i've attached the documentation
+			#c.create_container() #https://docker-py.readthedocs.io/en/stable/api.html #not quite sure how this function works so i've attached the documentation
+			container.run("slave image", detach = True)			
 			#this might be useful while creating container according to my friend https://stackoverflow.com/questions/35110146/can-anyone-explain-docker-sock (they were accidently creating container
-			#inside container
+			#inside container so this show how to connect to correct socket
 			num_slaves+=1 #increase num_slaves count
 
 #im assuming that the container id comes in the data of the post request, i've added sample-getcontainerpid.py for reference if this is not the case
@@ -62,6 +64,4 @@ def getWorkers():
 		pidlist.sort()#sorting the pids
 		return jsonify(pidlist), 200
 	return 405
-	
-
 
