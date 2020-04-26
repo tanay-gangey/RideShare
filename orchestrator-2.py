@@ -20,7 +20,7 @@ def spawncheck(count,containers):
 		while((num_slaves-mul20)!=0):#while the number we have is not equal to the number needed
 			container[num_slaves-1].stop() #stop the last slave
 			num_slaves-=1 #reduce number of slaves
-	else if(num_slaves<mul_20):
+	elif num_slaves<mul_20:
 		while((mul20-num_slaves)!=0):#while the number we have is equal to the number needed
 			#c.create_container() #https://docker-py.readthedocs.io/en/stable/api.html #not quite sure how this function works so i've attached the documentation
 			container.run("slave image", detach = True)			

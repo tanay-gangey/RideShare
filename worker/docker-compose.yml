@@ -1,0 +1,21 @@
+version: '3' 
+services:
+  worker:
+    build: .
+    ports:
+      - "8080:80"
+    environment:
+      - TEAM_NAME=CC_0088_0144_0667_1103
+    depends_on:
+      - rideshare_db
+  rideshare_db:
+    image: postgres
+    container_name: rideshare_db
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=ubuntu
+      - POSTGRES_PASSWORD=ride
+    expose:
+      - "5432"
+    command: -p 5432

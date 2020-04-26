@@ -49,7 +49,7 @@ def readDB():
         data = request.get_json()
         newReadReq = readWriteReq('readQ')
         response = newReadReq.publish(data)
-        print("[x] Sent [Read] %r" % message)
+        print("[x] Sent [Read] %r" % data)
         return response, 200
     return response, 405
 
