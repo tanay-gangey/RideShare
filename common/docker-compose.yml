@@ -7,9 +7,22 @@ services:
     ports:
       - 5672:5672
       - 15672:15672
-  postgres:
+
+  postgres_master:
     image: postgres
-    container_name: postgres
+    container_name: postgres_master
+    ports:
+      - "5432"
+    environment:
+      - POSTGRES_USER=ubuntu
+      - POSTGRES_PASSWORD=ride
+    expose:
+      - "5432"
+    command: -p 5432
+
+  postgres_slave:
+    image: postgres
+    container_name: postgres_slave
     ports:
       - "5432"
     environment:
@@ -30,7 +43,7 @@ services:
     - rmq
     depends_on:
     - rmq
-    - postgres
+    - postgres_master
     restart: on-failure
 
   slave:
@@ -44,7 +57,7 @@ services:
     - rmq
     depends_on:
     - rmq
-    - postgres
+    - postgres_slave
     restart: on-failure
 
   orchestrator:
@@ -54,6 +67,8 @@ services:
     command: sh -c "python orchestrator.py"
     volumes:
         - .:/tmp
+    ports:
+      - 80:80
+    expose:
+        - "80"
     restart: on-failure    
-
-  

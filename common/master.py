@@ -37,8 +37,7 @@ def checkHash(password):
 
 
 def writeDB(req):
-    data = req.get_json()
-    # if the above line doesnt work try data = json.loads(req)
+    data = json.loads(req)
     if data["table"] == "User":
         # Add a new User
         if data["caller"] == "addUser":
@@ -99,6 +98,7 @@ def writeDB(req):
 
 # Wrapper for writeDB
 def writeWrap(ch, method, props, body):
+    body = json.dumps(eval(body.decode()))
     writeResponse = writeDB(body)
     ch.basic_ack(delivery_tag=method.delivery_tag)
     channel.basic_publish(exchange='syncQ', routing_key='', body=body)

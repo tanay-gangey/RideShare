@@ -5,6 +5,7 @@ RUN pip install Psycopg2
 ADD master.py /tmp
 ADD slave.py /tmp
 ADD model.py /tmp
+ADD model_slave.py /tmp
 ADD orchestrator.py /tmp
 COPY requirements.txt /tmp
 WORKDIR /tmp

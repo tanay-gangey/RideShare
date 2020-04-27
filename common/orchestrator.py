@@ -11,7 +11,6 @@ app = Flask(__name__)
 
 class readWriteReq:
     def __init__(self, publishQueue):
-        print("Initialized !!!!!")
         self.publishQ = publishQueue
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(host='rmq'))
         self.channel = self.connection.channel()
@@ -27,7 +26,6 @@ class readWriteReq:
             self.response = body
 
     def publish(self, query):
-        print("Publishing....")
         self.response = None
         self.corID = str(uuid.uuid4())
         self.channel.basic_publish(
@@ -61,9 +59,8 @@ def writeDB():
     response = None
     if request.method == "POST":
         data = request.get_json()
-        print("Before request!!!!")
+        data = json.dumps(data)
         newWriteReq = readWriteReq('writeQ')
-        print("After request!!!!")
         response = newWriteReq.publish(data)
         print("[x] Sent [Write] %r" % data)
         return response, 200

@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 # Our postgres database:
 #   Database Name: rideshare_db
 #   Credentials: Username - ubuntu; Password: ride
-dbURI = 'postgresql+psycopg2://ubuntu:ride@postgres_master:5432/postgres'
+dbURI = 'postgresql+psycopg2://ubuntu:ride@postgres_slave:5432/postgres'
 Base = declarative_base()
 engine = create_engine(dbURI)
 
