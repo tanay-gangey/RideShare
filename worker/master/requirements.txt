@@ -7,3 +7,4 @@ Flask-Pika==0.3.8
 kazoo==2.7.0
 pika==1.1.0
 requests==2.23.0
+sqlalchemy

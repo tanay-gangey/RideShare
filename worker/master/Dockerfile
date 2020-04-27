@@ -1,6 +1,9 @@
 FROM python
 RUN pip install pandas
-ADD master.py /
+RUN apt-get install libpq-dev
+RUN pip install Psycopg2
+ADD master.py /tmp
+ADD model.py /tmp
 COPY requirements.txt /tmp
 WORKDIR /tmp
 RUN pip install -r requirements.txt
