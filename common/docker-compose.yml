@@ -51,7 +51,7 @@ services:
     build:
         context: .
         dockerfile: Dockerfile
-    command: sh -c "orchestrator.py"
+    command: sh -c "python orchestrator.py"
     volumes:
         - .:/tmp
     restart: on-failure    
