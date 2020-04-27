@@ -5,7 +5,6 @@ dockerpty==0.4.1
 Flask==1.1.2
 Flask-Pika==0.3.8
 kazoo==2.7.0
-numpy==1.16.6
-pandas==0.24.2
 pika==1.1.0
 requests==2.23.0
+sqlalchemy
