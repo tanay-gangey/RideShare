@@ -52,7 +52,7 @@ def writeDB(req):
                 responseToReturn.status_code = 201
             else:
                 responseToReturn.status_code = 400
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
         # Remove an existing User
         elif data["caller"] == "removeUser":
             session.query(User).filter_by(username=data["username"]).delete()
@@ -60,7 +60,7 @@ def writeDB(req):
             session.commit()
             responseToReturn = Response()
             responseToReturn.status_code = 200
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
     elif data["table"] == "Ride":
         # Add a new Ride
@@ -77,7 +77,7 @@ def writeDB(req):
                 responseToReturn.status_code = 201
             else:
                 responseToReturn.status_code = 400
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
         elif data["caller"] == "joinRide":
             rideExists = session.query(Ride).filter_by(ride_id=data["rideId"]).first()
@@ -88,24 +88,24 @@ def writeDB(req):
             session.commit()
             responseToReturn = Response()
             responseToReturn.status_code = 200
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
         elif data["caller"] == "deleteRide":
             session.query(Ride).filter_by(ride_id=data["rideId"]).delete()
             session.commit()
             responseToReturn = Response()
             responseToReturn.status_code = 200
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
 
 # Wrapper for writeDB
 def writeWrap(ch, method, props, body):
     body = json.dumps(eval(body.decode()))
     writeResponse = writeDB(body)
-    ch.basic_ack(delivery_tag=method.delivery_tag)
-    channel.basic_publish(exchange='syncQ', routing_key='', body=body)
+    print("ERROR: ", props.reply_to)
     ch.basic_publish(exchange='', routing_key=props.reply_to, properties=pika.BasicProperties(
         correlation_id=props.correlation_id), body=str(writeResponse))
+    ch.basic_ack(delivery_tag=method.delivery_tag)
     return writeResponse
 
 # -----------------------------------------------------------------------------------
@@ -132,7 +132,7 @@ def readDB(req):
                 responseToReturn.status_code = 200
             else:
                 responseToReturn.status_code = 400
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
         
         elif data["caller"] == "addUser":
             userExists = session.query(User).filter_by(username = data["username"]).all()
@@ -141,7 +141,7 @@ def readDB(req):
                 responseToReturn.status_code = 400
             else:
                 responseToReturn.status_code = 200
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
         
     elif data["table"] == "Ride":
         if data["caller"] == "listUpcomingRides":
@@ -157,7 +157,7 @@ def readDB(req):
                 responseToReturn.status_code = 204
             else:
                 responseToReturn.status_code = 200
-            return (jsonify(returnObj), responseToReturn.status_code, responseToReturn.headers.items())
+            return (jsonify(returnObj), responseToReturn.status_code)
         
         elif data["caller"] == "listRideDetails":
             rides = Ride.query.all()
@@ -179,7 +179,7 @@ def readDB(req):
                     break
             if rideNotFound:
                 responseToReturn.status_code = 204
-            return (jsonify(dictToReturn), responseToReturn.status_code, responseToReturn.headers.items())
+            return (jsonify(dictToReturn), responseToReturn.status_code)
 
         elif data["caller"] == "deleteRide":
             rideExists = session.query(Ride).filter_by(ride_id = data["rideId"]).all()
@@ -188,7 +188,7 @@ def readDB(req):
                 responseToReturn.status_code = 200
             else:
                 responseToReturn.status_code = 400
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
         elif data["caller"] == "joinRide":
             userExists = session.query(User).filter_by(username = data["username"]).all()
@@ -198,7 +198,7 @@ def readDB(req):
                 responseToReturn.status_code = 200
             else:
                 responseToReturn.status_code = 400
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
 
 # Wrapper for read

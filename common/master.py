@@ -1,14 +1,15 @@
+from sqlalchemy import create_engine
+from requests.models import Response
+from model import Base, engine, Ride, Session, User
+from flask import jsonify, request
+from datetime import datetime
 import collections
 import docker
 import json
 import pika
 import requests
+import uuid
 
-from datetime import datetime
-from flask import jsonify, request
-from model import Base, engine, Ride, Session, User
-from requests.models import Response
-from sqlalchemy import create_engine
 
 # Create tables in database
 Base.metadata.create_all(engine)
@@ -50,7 +51,7 @@ def writeDB(req):
                 responseToReturn.status_code = 201
             else:
                 responseToReturn.status_code = 400
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
         # Remove an existing User
         elif data["caller"] == "removeUser":
             session.query(User).filter_by(username=data["username"]).delete()
@@ -58,7 +59,7 @@ def writeDB(req):
             session.commit()
             responseToReturn = Response()
             responseToReturn.status_code = 200
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
     elif data["table"] == "Ride":
         # Add a new Ride
@@ -75,10 +76,11 @@ def writeDB(req):
                 responseToReturn.status_code = 201
             else:
                 responseToReturn.status_code = 400
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
         elif data["caller"] == "joinRide":
-            rideExists = session.query(Ride).filter_by(ride_id=data["rideId"]).first()
+            rideExists = session.query(Ride).filter_by(
+                ride_id=data["rideId"]).first()
             if rideExists.username:
                 rideExists.username += ", " + data["username"]
             else:
@@ -86,27 +88,33 @@ def writeDB(req):
             session.commit()
             responseToReturn = Response()
             responseToReturn.status_code = 200
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
         elif data["caller"] == "deleteRide":
             session.query(Ride).filter_by(ride_id=data["rideId"]).delete()
             session.commit()
             responseToReturn = Response()
             responseToReturn.status_code = 200
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
 
 # Wrapper for writeDB
 def writeWrap(ch, method, props, body):
     body = json.dumps(eval(body.decode()))
     writeResponse = writeDB(body)
-    ch.basic_ack(delivery_tag=method.delivery_tag)
-    channel.basic_publish(exchange='syncQ', routing_key='', body=body)
+    channel.basic_publish(exchange='syncQ', routing_key='', body=body, properties=pika.BasicProperties(
+        reply_to=props.reply_to,
+        correlation_id=props.correlation_id,
+        delivery_mode=2))
+    # Commenting out below doesn't give response on Postman
+    # Ideally we want to comment out below and get respsonse at orch from slave
     ch.basic_publish(exchange='', routing_key=props.reply_to, properties=pika.BasicProperties(
         correlation_id=props.correlation_id), body=str(writeResponse))
+    ch.basic_ack(delivery_tag=method.delivery_tag)
     return writeResponse
 
 # -----------------------------------------------------------------------------------
+
 
 # Master Code
 # Consume from writeQ for Master

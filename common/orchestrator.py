@@ -22,6 +22,7 @@ class readWriteReq:
             auto_ack=True)
 
     def onResponse(self, ch, method, props, body):
+        print(self.corID, props.correlation_id)
         if self.corID == props.correlation_id:
             self.response = body
 
@@ -48,10 +49,11 @@ def readDB():
     if request.method == "POST":
         data = request.get_json()
         newReadReq = readWriteReq('readQ')
-        response = newReadReq.publish(data)
+        response = newReadReq.publish(data).decode()
+        response = eval(response)
         print("[x] Sent [Read] %r" % data)
-        return response, 200
-    return response, 405
+        return response[0], response[1]
+    return response[0], 405
 
 
 @app.route('/api/v1/db/write', methods=["POST"])
@@ -61,10 +63,11 @@ def writeDB():
         data = request.get_json()
         data = json.dumps(data)
         newWriteReq = readWriteReq('writeQ')
-        response = newWriteReq.publish(data)
+        response = newWriteReq.publish(data).decode()
+        response = eval(response)
         print("[x] Sent [Write] %r" % data)
-        return response, 200
-    return response, 405
+        return response[0], response[1]
+    return response[0], 405
 
 
 @app.route('/api/v1/db/clear', methods=["POST"])
@@ -73,10 +76,11 @@ def clearDB():
     if request.method == "POST":
         data = request.get_json()
         newClearReq = readWriteReq('writeQ')
-        response = newClearReq.publish(data)
+        response = newClearReq.publish(data).decode()
+        response = eval(response)
         print("[x] Sent [Clear] %r" % data)
-        return response, 200
-    return response, 405
+        return response[0], response[1]
+    return response[0], 405
 
 
 if __name__ == '__main__':
