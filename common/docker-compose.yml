@@ -9,7 +9,7 @@ services:
       - 15672:15672
   postgres:
     image: postgres
-    container_name: slave_postgres
+    container_name: postgres
     ports:
       - "5432"
     environment:

@@ -18,6 +18,8 @@ session = Session()
 connection = pika.BlockingConnection(
     pika.ConnectionParameters(host='rmq'))
 channel = connection.channel()
+channel.queue_declare(queue='writeQ', durable=True)
+channel.queue_declare(queue='readQ', durable=True)
 
 # ------------------------------------------------------------------------------------
 
@@ -211,7 +213,14 @@ def readWrap(ch, method, props, body):
 # Consume from readQ for Slave
 channel.basic_qos(prefetch_count=1)
 # Sync database with master
-channel.basic_consume(queue='syncQ', on_message_callback=writeWrap, auto_ack=True)
+channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
+result = channel.queue_declare(queue='', exclusive=True)
+queue_name = result.method.queue
+channel.basic_consume(queue=queue_name, on_message_callback=writeWrap, auto_ack=True)
+
+channel.queue_bind(exchange='syncQ', queue=queue_name)
+
+
 # Read after sync
 channel.basic_consume(queue='readQ', on_message_callback=readWrap)
 channel.start_consuming()

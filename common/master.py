@@ -110,7 +110,7 @@ def writeWrap(ch, method, props, body):
 
 # Master Code
 # Consume from writeQ for Master
-
+channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
 channel.basic_qos(prefetch_count=1)
 channel.queue_declare(queue='writeQ', durable=True)
 channel.basic_consume(queue='writeQ', on_message_callback=writeWrap)
