@@ -1,0 +1,59 @@
+version: '3.1'
+
+services:
+  rmq:
+    image: rabbitmq
+    container_name: rmq
+    ports:
+      - 5672:5672
+      - 15672:15672
+  postgres:
+    image: postgres
+    container_name: slave_postgres
+    ports:
+      - "5432"
+    environment:
+      - POSTGRES_USER=ubuntu
+      - POSTGRES_PASSWORD=ride
+    expose:
+      - "5432"
+    command: -p 5432
+
+  master:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sh -c "sleep 40 && python master.py"
+    volumes:
+        - .:/tmp
+    links:
+    - rmq
+    depends_on:
+    - rmq
+    - postgres
+    restart: on-failure
+
+  slave:
+    build:
+        context: .
+        dockerfile: Dockerfile
+    command: sh -c "sleep 40 && python slave.py"
+    volumes:
+        - .:/tmp
+    links:
+    - rmq
+    depends_on:
+    - rmq
+    - postgres
+    restart: on-failure
+
+  orchestrator:
+    build:
+        context: .
+        dockerfile: Dockerfile
+    command: sh -c "orchestrator.py"
+    volumes:
+        - .:/tmp
+    restart: on-failure    
+
+  
