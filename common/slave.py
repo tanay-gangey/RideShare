@@ -76,6 +76,7 @@ def writeDB(req):
                 session.add(newRide)
                 session.commit()
                 responseToReturn.status_code = 201
+
             else:
                 responseToReturn.status_code = 400
             return (responseToReturn.text, responseToReturn.status_code)
@@ -106,7 +107,6 @@ def writeWrap(ch, method, props, body):
     channel.basic_publish(exchange='', routing_key='responseQ', properties=pika.BasicProperties(
         correlation_id=props.correlation_id), body=str(writeResponse))
     # ch.basic_ack(delivery_tag=method.delivery_tag)
-    return writeResponse
 
 # -----------------------------------------------------------------------------------
 # -----------------------------------------------------------------------------------
@@ -179,7 +179,7 @@ def readDB(req):
                     break
             if rideNotFound:
                 responseToReturn.status_code = 204
-            return (jsonify(dictToReturn), responseToReturn.status_code)
+            return (json.dumps(dictToReturn), responseToReturn.status_code)
 
         elif data["caller"] == "deleteRide":
             rideExists = session.query(Ride).filter_by(ride_id = data["rideId"]).all()
@@ -203,22 +203,23 @@ def readDB(req):
 
 # Wrapper for read
 def readWrap(ch, method, props, body):
+    print("In readwrap")
     body = json.dumps(eval(body.decode()))
     readResponse = readDB(body)
+    print("response rec.")
     channel.basic_publish(exchange='', routing_key='responseQ', properties=pika.BasicProperties(
         correlation_id=props.correlation_id), body=str(readResponse))
-    return readResponse
+    print("response pub.")
+    # ch.basic_ack(delivery_tag=method.delivery_tag)
 
 # Consume from readQ for Slave
-channel.basic_qos(prefetch_count=1)
+# channel.basic_qos(prefetch_count=1)
 # Sync database with master
 channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
 result = channel.queue_declare(queue='', exclusive=True)
 queue_name = result.method.queue
 channel.basic_consume(queue=queue_name, on_message_callback=writeWrap, auto_ack=True)
-
 channel.queue_bind(exchange='syncQ', queue=queue_name)
-
 
 # Read after sync
 channel.basic_consume(queue='readQ', on_message_callback=readWrap)

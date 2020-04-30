@@ -1,4 +1,4 @@
-0] Add ResponseQ
+0] Add ResponseQ - DONE* [slow response; sometimes no response]
 1] Create one Dockerfile & docker-compose.yml - containing structure for a single worker
     - This would spawn a new worker (whether master/slave doesn't matter; same code)
 2] Test endpoints on instance - expecting errors

@@ -101,7 +101,7 @@ def writeDB(req):
 # Wrapper for writeDB
 def writeWrap(ch, method, props, body):
     body = json.dumps(eval(body.decode()))
-    writeResponse = writeDB(body)
+    writeDB(body)
     channel.basic_publish(exchange='syncQ', routing_key='', body=body, properties=pika.BasicProperties(
         reply_to=props.reply_to,
         correlation_id=props.correlation_id,
@@ -111,7 +111,6 @@ def writeWrap(ch, method, props, body):
     # ch.basic_publish(exchange='', routing_key=props.reply_to, properties=pika.BasicProperties(
     #     correlation_id=props.correlation_id), body=str(writeResponse))
     # ch.basic_ack(delivery_tag=method.delivery_tag)
-    return writeResponse
 
 # -----------------------------------------------------------------------------------
 
@@ -119,7 +118,7 @@ def writeWrap(ch, method, props, body):
 # Master Code
 # Consume from writeQ for Master
 channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
-channel.basic_qos(prefetch_count=1)
+# channel.basic_qos(prefetch_count=1)
 channel.queue_declare(queue='writeQ', durable=True)
 channel.basic_consume(queue='writeQ', on_message_callback=writeWrap)
 channel.start_consuming()
