@@ -1,0 +1,10 @@
+0] Add ResponseQ
+1] Create one Dockerfile & docker-compose.yml - containing structure for a single worker
+    - This would spawn a new worker (whether master/slave doesn't matter; same code)
+2] Test endpoints on instance - expecting errors
+    - We are not returning headers from read/write db, so check if it still works
+    - Fix if it doesn't
+3] Write code to spawn worker automatically based on no. of requests
+4] Fix crash APIs
+
+EOD: Remove unncecessary files/directories, clean repo.

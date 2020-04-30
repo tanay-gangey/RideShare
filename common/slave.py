@@ -20,6 +20,7 @@ connection = pika.BlockingConnection(
 channel = connection.channel()
 channel.queue_declare(queue='writeQ', durable=True)
 channel.queue_declare(queue='readQ', durable=True)
+channel.queue_declare(queue='responseQ', durable=True)
 
 # ------------------------------------------------------------------------------------
 
@@ -102,10 +103,9 @@ def writeDB(req):
 def writeWrap(ch, method, props, body):
     body = json.dumps(eval(body.decode()))
     writeResponse = writeDB(body)
-    print("ERROR: ", props.reply_to)
-    ch.basic_publish(exchange='', routing_key=props.reply_to, properties=pika.BasicProperties(
+    channel.basic_publish(exchange='', routing_key='responseQ', properties=pika.BasicProperties(
         correlation_id=props.correlation_id), body=str(writeResponse))
-    ch.basic_ack(delivery_tag=method.delivery_tag)
+    # ch.basic_ack(delivery_tag=method.delivery_tag)
     return writeResponse
 
 # -----------------------------------------------------------------------------------
@@ -157,7 +157,7 @@ def readDB(req):
                 responseToReturn.status_code = 204
             else:
                 responseToReturn.status_code = 200
-            return (jsonify(returnObj), responseToReturn.status_code)
+            return (json.dumps(returnObj), responseToReturn.status_code)
         
         elif data["caller"] == "listRideDetails":
             rides = Ride.query.all()
@@ -204,9 +204,8 @@ def readDB(req):
 # Wrapper for read
 def readWrap(ch, method, props, body):
     body = json.dumps(eval(body.decode()))
-    readResponse = writeDB(body)
-    ch.basic_ack(delivery_tag=method.delivery_tag)
-    ch.basic_publish(exchange='', routing_key=props.reply_to, properties=pika.BasicProperties(
+    readResponse = readDB(body)
+    channel.basic_publish(exchange='', routing_key='responseQ', properties=pika.BasicProperties(
         correlation_id=props.correlation_id), body=str(readResponse))
     return readResponse
 

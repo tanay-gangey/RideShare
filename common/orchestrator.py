@@ -11,13 +11,19 @@ app = Flask(__name__)
 
 class readWriteReq:
     def __init__(self, publishQueue):
+        print("Inside Init")
         self.publishQ = publishQueue
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(host='rmq'))
         self.channel = self.connection.channel()
+
+        # expect response to this request in the responseQ
+        tempQ = self.channel.queue_declare(queue='responseQ', durable=True)
+        self.resQ = tempQ.method.queue
         result = self.channel.queue_declare(queue='', durable=True)
         self.callbackQ = result.method.queue
+        
         self.channel.basic_consume(
-            queue=self.callbackQ,
+            queue=self.resQ,
             on_message_callback=self.onResponse,
             auto_ack=True)
 
@@ -25,7 +31,7 @@ class readWriteReq:
         print(self.corID, props.correlation_id)
         if self.corID == props.correlation_id:
             self.response = body
-
+            
     def publish(self, query):
         self.response = None
         self.corID = str(uuid.uuid4())
@@ -48,8 +54,10 @@ def readDB():
     response = None
     if request.method == "POST":
         data = request.get_json()
+        data = json.dumps(data)
         newReadReq = readWriteReq('readQ')
         response = newReadReq.publish(data).decode()
+        print(response)
         response = eval(response)
         print("[x] Sent [Read] %r" % data)
         return response[0], response[1]

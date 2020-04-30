@@ -50,7 +50,7 @@ services:
     build:
         context: .
         dockerfile: Dockerfile
-    command: sh -c "sleep 40 && python slave.py"
+    command: sh -c "sleep 10 && python slave.py"
     volumes:
         - .:/tmp
     links:
@@ -64,7 +64,7 @@ services:
     build:
         context: .
         dockerfile: Dockerfile
-    command: sh -c "python orchestrator.py"
+    command: sh -c "sleep 10 && python orchestrator.py"
     volumes:
         - .:/tmp
     ports:

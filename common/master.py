@@ -108,9 +108,9 @@ def writeWrap(ch, method, props, body):
         delivery_mode=2))
     # Commenting out below doesn't give response on Postman
     # Ideally we want to comment out below and get respsonse at orch from slave
-    ch.basic_publish(exchange='', routing_key=props.reply_to, properties=pika.BasicProperties(
-        correlation_id=props.correlation_id), body=str(writeResponse))
-    ch.basic_ack(delivery_tag=method.delivery_tag)
+    # ch.basic_publish(exchange='', routing_key=props.reply_to, properties=pika.BasicProperties(
+    #     correlation_id=props.correlation_id), body=str(writeResponse))
+    # ch.basic_ack(delivery_tag=method.delivery_tag)
     return writeResponse
 
 # -----------------------------------------------------------------------------------
