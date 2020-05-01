@@ -144,37 +144,43 @@ def spawnWorker():
 
 @app.route('/api/v1/crash/master', methods = ["POST"])
 def killMaster():
-	if request.method == "POST":
-		container = request.get_json()["container"]
-		container.kill()
-		return 200
-	return 405
+    if request.method == "POST":
+        containerList = dockEnv.containers.list(all)
+        cntrdict = dict() #dictionary of containers and the pids, cause we have to kill slave with highest pid      
+        for image in containerList:
+            if(image['Config']['Image'] not in ['zookeeper','python','postgres','rabbitmq','common_orchestrator']):
+                #if('slave' not in image['Config']['Image'])
+                ctrdict[image] = image.attrs['State']['Pid']
+        mincid =list(cntrdict.keys())[list(cntrdict.values()).index(min(list(cntrdict.values())))] #gets the key of the min value. i.e. gets the container id of the lowest pid container
+        mincid.kill()
+        return 200
+    return 405
 
 
 #im assuming we get a list of containers,  i've added sample-getcontainerpid.py for reference if this is not the case, to get the list of just slave containers we'll need zookeeper idk how to do that
 @app.route('/api/v1/crash/slave', methods = ["POST"])
 def killSlave():
-	if request.method == "POST":
-		containers = request.get_json()["containers"]
-		cntrdict = dict() #dictionary of containers and the pids, cause we have to kill slave with highest pid		
-		for cntr in containers:
-			ctrdict[cntr.id] = cntr.top()['Processes'][0][1] #cntr.id[:10] is the first 10 characters of the container id that are show when you do docker ps -a
-		maxcid =list(cntrdict.keys())[list(cntrdict.values()).index(max(list(cntrdict.values())))] #gets the key of the max value. i.e. gets the container id of the highest pid container
-		for cntr in containers:#iterate over list of containers
-			if(cntr.id == maxcid):#if container id matches container id of container with max pid
-				cntr.kill() #then kill that container
-				break;
-		return 200
-	return 405
+    if request.method == "POST":
+        containerList = dockEnv.containers.list(all)
+        cntrdict = dict() #dictionary of containers and the pids, cause we have to kill slave with highest pid		
+        for image in containerList:
+            if(image['Config']['Image'] not in ['zookeeper','python','postgres','rabbitmq','common_orchestrator']):
+                ctrdict[image] = image.attrs['State']['Pid']
+        maxcid =list(cntrdict.keys())[list(cntrdict.values()).index(max(list(cntrdict.values())))] #gets the key of the max value. i.e. gets the container id of the highest pid container
+        maxcid.kill() #kill that container
+        return 200
+    return 405
 
 @app.route('/api/v1/worker/list', methods = ["GET"])
 def getWorkers():
 	if request.method == "GET":
-		clist = dockClient.containers() #list of containers
+		containerList = dockEnv.containers.list(all) #list of containers
 		pidlist = list()#list of pids
-		for cntr in clist:
-			pidlist.append(cntr.top()['Processes'][0][1])#getting all the pids
-		pidlist.sort()#sorting the pids
+        for image in containerList:
+            if(image['Config']['Image'] not in ['zookeeper','python','postgres','rabbitmq','common_orchestrator']):
+                pidlist.append(image.attrs['State']['Pid'])
+		
+        pidlist.sort()#sorting the pids
 		return jsonify(pidlist), 200
 	return 405
 
