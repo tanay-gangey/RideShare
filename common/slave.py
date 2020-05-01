@@ -216,7 +216,7 @@ def readWrap(ch, method, props, body):
 # channel.basic_qos(prefetch_count=1)
 # Sync database with master
 channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
-result = channel.queue_declare(queue='', exclusive=True)
+result = channel.queue_declare(queue='', exclusive=True, durable='True')
 queue_name = result.method.queue
 channel.basic_consume(queue=queue_name, on_message_callback=writeWrap, auto_ack=True)
 channel.queue_bind(exchange='syncQ', queue=queue_name)

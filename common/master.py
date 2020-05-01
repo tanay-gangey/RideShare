@@ -21,7 +21,6 @@ connection = pika.BlockingConnection(
 channel = connection.channel()
 
 # ------------------------------------------------------------------------------------
-
 # Common Code [to Master & Slave]
 
 
