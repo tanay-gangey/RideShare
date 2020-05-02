@@ -154,8 +154,8 @@ def spawnWorker():
         extra = workers - numContainers
         while extra:
             print("Adding worker")
-            dockEnv.containers.run("common_slave", ["python3", "slave.py"], links={
-                                   "rmq": "rmq", "postgres": "postgres_slave"}, network="common_default", detach=True)
+            dockEnv.containers.run("common_worker", ["python3", "worker.py"], links={
+                                   "rmq": "rmq", "postgres": "postgres_worker"}, network="common_default", detach=True)
             numContainers += 1
             extra -= 1
 
