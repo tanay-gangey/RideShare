@@ -3,6 +3,7 @@ import docker
 import json
 import pika
 import requests
+import uuid
 
 from datetime import datetime
 from flask import jsonify, request
@@ -14,15 +15,14 @@ from sqlalchemy import create_engine
 Base.metadata.create_all(engine)
 session = Session()
 
-# Connecting to the RabbitMQ container
-connection = pika.BlockingConnection(
-    pika.ConnectionParameters(host='localhost'))
-channel = connection.channel()
-
 # ------------------------------------------------------------------------------------
 
 # Common Code [to Master & Slave]
 
+# Connecting to the RabbitMQ container
+connection = pika.BlockingConnection(
+    pika.ConnectionParameters(host='localhost'))
+channel = connection.channel()
 
 def checkHash(password):
     if len(password) == 40:
@@ -37,8 +37,7 @@ def checkHash(password):
 
 
 def writeDB(req):
-    data = req.get_json()
-    # if the above line doesnt work try data = json.loads(req)
+    data = json.loads(req)
     if data["table"] == "User":
         # Add a new User
         if data["caller"] == "addUser":
@@ -51,7 +50,7 @@ def writeDB(req):
                 responseToReturn.status_code = 201
             else:
                 responseToReturn.status_code = 400
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
         # Remove an existing User
         elif data["caller"] == "removeUser":
             session.query(User).filter_by(username=data["username"]).delete()
@@ -59,7 +58,7 @@ def writeDB(req):
             session.commit()
             responseToReturn = Response()
             responseToReturn.status_code = 200
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
     elif data["table"] == "Ride":
         # Add a new Ride
@@ -76,10 +75,11 @@ def writeDB(req):
                 responseToReturn.status_code = 201
             else:
                 responseToReturn.status_code = 400
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
         elif data["caller"] == "joinRide":
-            rideExists = session.query(Ride).filter_by(ride_id=data["rideId"]).first()
+            rideExists = session.query(Ride).filter_by(
+                ride_id=data["rideId"]).first()
             if rideExists.username:
                 rideExists.username += ", " + data["username"]
             else:
@@ -87,38 +87,49 @@ def writeDB(req):
             session.commit()
             responseToReturn = Response()
             responseToReturn.status_code = 200
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
         elif data["caller"] == "deleteRide":
             session.query(Ride).filter_by(ride_id=data["rideId"]).delete()
             session.commit()
             responseToReturn = Response()
             responseToReturn.status_code = 200
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
-
-# Wrapper for writeDB
-def writeWrap(ch, method, props, body):
-    writeResponse = writeDB(body)
-    ch.basic_ack(delivery_tag=method.delivery_tag)
-    channel.basic_publish(exchange='syncQ', routing_key='', body=body)
-    ch.basic_publish(exchange='', routing_key=props.reply_to, properties=pika.BasicProperties(
-        correlation_id=props.correlation_id), body=str(writeResponse))
-    return writeResponse
 
 # -----------------------------------------------------------------------------------
 
 # Master Code
-# Consume from writeQ for Master
 
+# Wrapper for writeDB
+def writeWrapMaster(ch, method, props, body):
+    body = json.dumps(eval(body.decode()))
+    writeDB(body)
+    channel.basic_publish(exchange='syncQ', routing_key='', body=body, properties=pika.BasicProperties(
+        reply_to=props.reply_to,
+        correlation_id=props.correlation_id,
+        delivery_mode=2))
+    # Ideally we want to comment out below and get respsonse at orch from slave
+    # ch.basic_publish(exchange='', routing_key=props.reply_to, properties=pika.BasicProperties(
+    #     correlation_id=props.correlation_id), body=str(writeResponse))
+    # ch.basic_ack(delivery_tag=method.delivery_tag)
+
+# Consume from writeQ for Master
+channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
 channel.basic_qos(prefetch_count=1)
 channel.queue_declare(queue='writeQ', durable=True)
-channel.basic_consume(queue='writeQ', on_message_callback=writeWrap)
+channel.basic_consume(queue='writeQ', on_message_callback=writeWrapMaster)
 channel.start_consuming()
 
 # -----------------------------------------------------------------------------------
 
 # Slave Code
+
+def writeWrapSlave(ch, method, props, body):
+    body = json.dumps(eval(body.decode()))
+    writeResponse = writeDB(body)
+    channel.basic_publish(exchange='', routing_key='responseQ', properties=pika.BasicProperties(
+        correlation_id=props.correlation_id), body=str(writeResponse))
 
 def timeAhead(timestamp):
     currTimeStamp = datetime.now().isoformat(' ', 'seconds')
@@ -129,8 +140,7 @@ def timeAhead(timestamp):
     return False
 
 def readDB(req):
-    # data = json.loads(req)
-    data = request.get_json()
+    data = json.loads(req)
     if data["table"] == "User":
         checkUserSet = {"removeUser", "createRide"}
         if data["caller"] in checkUserSet:
@@ -140,7 +150,7 @@ def readDB(req):
                 responseToReturn.status_code = 200
             else:
                 responseToReturn.status_code = 400
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
         
         elif data["caller"] == "addUser":
             userExists = session.query(User).filter_by(username = data["username"]).all()
@@ -149,7 +159,7 @@ def readDB(req):
                 responseToReturn.status_code = 400
             else:
                 responseToReturn.status_code = 200
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
         
     elif data["table"] == "Ride":
         if data["caller"] == "listUpcomingRides":
@@ -165,7 +175,7 @@ def readDB(req):
                 responseToReturn.status_code = 204
             else:
                 responseToReturn.status_code = 200
-            return (jsonify(returnObj), responseToReturn.status_code, responseToReturn.headers.items())
+            return (json.dumps(returnObj), responseToReturn.status_code)
         
         elif data["caller"] == "listRideDetails":
             rides = Ride.query.all()
@@ -187,7 +197,7 @@ def readDB(req):
                     break
             if rideNotFound:
                 responseToReturn.status_code = 204
-            return (jsonify(dictToReturn), responseToReturn.status_code, responseToReturn.headers.items())
+            return (json.dumps(dictToReturn), responseToReturn.status_code)
 
         elif data["caller"] == "deleteRide":
             rideExists = session.query(Ride).filter_by(ride_id = data["rideId"]).all()
@@ -196,7 +206,7 @@ def readDB(req):
                 responseToReturn.status_code = 200
             else:
                 responseToReturn.status_code = 400
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
         elif data["caller"] == "joinRide":
             userExists = session.query(User).filter_by(username = data["username"]).all()
@@ -206,21 +216,33 @@ def readDB(req):
                 responseToReturn.status_code = 200
             else:
                 responseToReturn.status_code = 400
-            return (responseToReturn.text, responseToReturn.status_code, responseToReturn.headers.items())
+            return (responseToReturn.text, responseToReturn.status_code)
 
 
 # Wrapper for read
 def readWrap(ch, method, props, body):
-    readResponse = writeDB(body)
-    ch.basic_ack(delivery_tag=method.delivery_tag)
-    ch.basic_publish(exchange='', routing_key=props.reply_to, properties=pika.BasicProperties(
+    print("In readwrap")
+    body = json.dumps(eval(body.decode()))
+    readResponse = readDB(body)
+    print("response rec.")
+    channel.basic_publish(exchange='', routing_key='responseQ', properties=pika.BasicProperties(
         correlation_id=props.correlation_id), body=str(readResponse))
-    return readResponse
+    print("response pub.")
+    # ch.basic_ack(delivery_tag=method.delivery_tag)
 
 # Consume from readQ for Slave
+channel.queue_declare(queue='writeQ', durable=True)
+channel.queue_declare(queue='readQ', durable=True)
+channel.queue_declare(queue='responseQ', durable=True)
 channel.basic_qos(prefetch_count=1)
+
 # Sync database with master
-channel.basic_consume(queue='syncQ', on_message_callback=writeWrap, auto_ack=True)
+channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
+result = channel.queue_declare(queue='', exclusive=True, durable='True')
+queue_name = result.method.queue
+channel.basic_consume(queue=queue_name, on_message_callback=writeWrapSlave, auto_ack=True)
+channel.queue_bind(exchange='syncQ', queue=queue_name)
+
 # Read after sync
 channel.basic_consume(queue='readQ', on_message_callback=readWrap)
 channel.start_consuming()

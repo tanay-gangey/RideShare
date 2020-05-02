@@ -1,16 +1,15 @@
 version: '3.1' 
 services:
-  worker:
-    build: .
+  rmq:
+    image: rabbitmq
+    container_name: rmq
     ports:
-      - "8080:80"
-    environment:
-      - TEAM_NAME=CC_0088_0144_0667_1103
-    depends_on:
-      - rideshare_db
-  rideshare_db:
+      - 5672:5672
+      - 15672:15672
+
+  postgres_worker:
     image: postgres
-    container_name: rideshare_db
+    container_name: postgres_worker
     ports:
       - "5432:5432"
     environment:
@@ -19,3 +18,32 @@ services:
     expose:
       - "5432"
     command: -p 5432
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: sh -c "sleep 30 && python -u worker.py"
+    volumes:
+        - .:/tmp
+    links:
+    - rmq
+    depends_on:
+    - rmq
+    - postgres_worker
+    restart: on-failure
+
+  orchestrator:
+    build:
+        context: .
+        dockerfile: Dockerfile
+    command: sh -c "sleep 15 && python -u orchestrator.py"
+    volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+        - /usr/bin/docker:/usr/bin/docker
+        - .:/tmp
+    ports:
+      - 80:80
+    expose:
+        - "80"
+    restart: on-failure    
