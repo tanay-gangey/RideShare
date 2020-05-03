@@ -138,7 +138,10 @@ def spawnWorker():
     numContainers = len(containerList)
 
     newContList = []
+    print(newContList)
     for image in containerList:
+        print(image.attrs)
+        print(image.attrs['Config'])
         if(image.attrs['Config']['Image'] not in ['zookeeper', 'python', 'postgres', 'rabbitmq', 'common_orchestrator']):
             newContList.append(image)
 

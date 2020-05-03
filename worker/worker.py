@@ -1,27 +1,38 @@
 import collections
 import docker
 import json
+import os
 import pika
 import requests
 import uuid
 
 from datetime import datetime
 from flask import jsonify, request
-from model import Base, engine, Ride, Session, User
+from model import doInit, Base, Ride, User
 from requests.models import Response
 from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 # Create tables in database
+
+workerType = os.environ['TYPE']
+dbName = os.environ['DBNAME']
+
+dbURI = doInit(dbName)
+engine = create_engine(dbURI)
+Session = sessionmaker(bind = engine)
+
 Base.metadata.create_all(engine)
 session = Session()
 
+print("Env Type: ", workerType)
 # ------------------------------------------------------------------------------------
 
 # Common Code [to Master & Slave]
 
 # Connecting to the RabbitMQ container
 connection = pika.BlockingConnection(
-    pika.ConnectionParameters(host='localhost'))
+    pika.ConnectionParameters(host='rmq'))
 channel = connection.channel()
 
 def checkHash(password):
@@ -115,11 +126,13 @@ def writeWrapMaster(ch, method, props, body):
     # ch.basic_ack(delivery_tag=method.delivery_tag)
 
 # Consume from writeQ for Master
-channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
-channel.basic_qos(prefetch_count=1)
-channel.queue_declare(queue='writeQ', durable=True)
-channel.basic_consume(queue='writeQ', on_message_callback=writeWrapMaster)
-channel.start_consuming()
+if workerType == 'master':
+    print("In Master!")
+    channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
+    # channel.basic_qos(prefetch_count=1)
+    channel.queue_declare(queue='writeQ', durable=True)
+    channel.basic_consume(queue='writeQ', on_message_callback=writeWrapMaster)
+    channel.start_consuming()
 
 # -----------------------------------------------------------------------------------
 
@@ -231,19 +244,21 @@ def readWrap(ch, method, props, body):
     # ch.basic_ack(delivery_tag=method.delivery_tag)
 
 # Consume from readQ for Slave
-channel.queue_declare(queue='writeQ', durable=True)
-channel.queue_declare(queue='readQ', durable=True)
-channel.queue_declare(queue='responseQ', durable=True)
-channel.basic_qos(prefetch_count=1)
+if workerType == 'slave':
+    print("In Slave!")
+    channel.queue_declare(queue='writeQ', durable=True)
+    channel.queue_declare(queue='readQ', durable=True)
+    channel.queue_declare(queue='responseQ', durable=True)
+    # channel.basic_qos(prefetch_count=1)
 
-# Sync database with master
-channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
-result = channel.queue_declare(queue='', exclusive=True, durable='True')
-queue_name = result.method.queue
-channel.basic_consume(queue=queue_name, on_message_callback=writeWrapSlave, auto_ack=True)
-channel.queue_bind(exchange='syncQ', queue=queue_name)
+    # Sync database with master
+    channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
+    result = channel.queue_declare(queue='', exclusive=True, durable='True')
+    queue_name = result.method.queue
+    channel.basic_consume(queue=queue_name, on_message_callback=writeWrapSlave, auto_ack=True)
+    channel.queue_bind(exchange='syncQ', queue=queue_name)
 
-# Read after sync
-channel.basic_consume(queue='readQ', on_message_callback=readWrap)
-channel.start_consuming()
+    # Read after sync
+    channel.basic_consume(queue='readQ', on_message_callback=readWrap)
+    channel.start_consuming()
 # -----------------------------------------------------------------------------------

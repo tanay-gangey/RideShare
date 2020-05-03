@@ -2,15 +2,16 @@ from sqlalchemy import create_engine
 from sqlalchemy import Column, Integer, String, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-
+import os
 # Our postgres database:
-#   Database Name: rideshare_db
 #   Credentials: Username - ubuntu; Password: ride
-dbURI = 'postgresql+psycopg2://ubuntu:ride@postgres_worker:5432/postgres'
-Base = declarative_base()
-engine = create_engine(dbURI)
 
-Session = sessionmaker(bind = engine)
+def doInit(dbName):
+    
+    dbURI = 'postgresql+psycopg2://ubuntu:ride@' + dbName + ':5432/postgres' 
+    return dbURI
+
+Base = declarative_base()
 
 class User(Base):
     '''
