@@ -6,9 +6,9 @@ import os
 # Our postgres database:
 #   Credentials: Username - ubuntu; Password: ride
 
-def doInit(dbName):
+def doInit():
     
-    dbURI = 'postgresql+psycopg2://ubuntu:ride@' + dbName + ':5432/postgres' 
+    dbURI = 'sqlite:///worker.db' 
     return dbURI
 
 Base = declarative_base()

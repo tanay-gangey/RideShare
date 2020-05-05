@@ -1,7 +1,8 @@
-FROM python
+FROM python:3.7-slim-stretch
+ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE 1
+
 RUN pip install pandas
-RUN apt-get install libpq-dev
-RUN pip install Psycopg2
 ADD worker.py /tmp
 ADD readCount /tmp
 ADD model.py /tmp
