@@ -1,5 +1,4 @@
 FROM python:3.7
-RUN pip install pandas
 RUN apt-get install libpq-dev
 RUN pip install Psycopg2
 ADD worker.py /

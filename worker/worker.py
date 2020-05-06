@@ -48,6 +48,7 @@ def checkHash(password):
 
 
 def writeDB(req):
+    print("In write DB")
     data = json.loads(req)
     if data["table"] == "User":
         # Add a new User
@@ -129,7 +130,6 @@ def writeWrapMaster(ch, method, props, body):
 if workerType == 'master':
     print("In Master!")
     channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
-    # channel.basic_qos(prefetch_count=1)
     channel.queue_declare(queue='writeQ', durable=True)
     channel.basic_consume(queue='writeQ', on_message_callback=writeWrapMaster)
     channel.start_consuming()
@@ -139,10 +139,11 @@ if workerType == 'master':
 # Slave Code
 
 def writeWrapSlave(ch, method, props, body):
+    print("In write wrap slave")
     body = json.dumps(eval(body.decode()))
     writeResponse = writeDB(body)
     channel.basic_publish(exchange='', routing_key='responseQ', properties=pika.BasicProperties(
-        correlation_id=props.correlation_id), body=str(writeResponse))
+        correlation_id=props.correlation_id,  delivery_mode=2), body=str(writeResponse))
 
 def timeAhead(timestamp):
     currTimeStamp = datetime.now().isoformat(' ', 'seconds')
@@ -184,6 +185,7 @@ def readDB(req):
                         newObj = {"rideId":ride.ride_id, "username":ride.created_by, "timestamp":ride.timestamp}
                         returnObj.append(newObj)
             responseToReturn = Response()
+            print(returnObj)
             if not returnObj:
                 responseToReturn.status_code = 204
             else:
@@ -237,16 +239,13 @@ def readWrap(ch, method, props, body):
     print("In readwrap")
     body = json.dumps(eval(body.decode()))
     readResponse = readDB(body)
-    print("response rec.")
     channel.basic_publish(exchange='', routing_key='responseQ', properties=pika.BasicProperties(
         correlation_id=props.correlation_id), body=str(readResponse))
-    print("response pub.")
-    # ch.basic_ack(delivery_tag=method.delivery_tag)
+    ch.basic_ack(delivery_tag=method.delivery_tag)
 
 # Consume from readQ for Slave
 if workerType == 'slave':
     print("In Slave!")
-    channel.queue_declare(queue='writeQ', durable=True)
     channel.queue_declare(queue='readQ', durable=True)
     channel.queue_declare(queue='responseQ', durable=True)
     channel.basic_qos(prefetch_count=1)

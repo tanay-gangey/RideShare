@@ -13,7 +13,8 @@ from threading import Timer
 app = Flask(__name__)
 dockEnv = docker.from_env()
 dockClient = docker.DockerClient()
-dockEnv = docker.DockerClient(base_url='unix:///var/run/docker.sock')
+# dockEnv = docker.DockerClient(base_url='unix:///var/run/docker.sock')
+
 
 class readWriteReq:
     def __init__(self, publishQueue):
@@ -127,25 +128,44 @@ def clearDB():
 
 def spawnWorker():
     # Find no. of read-counts
-    fh = open("readCount", "r")
+    fh = open("readCount", "r+")
     count = int(fh.readline())
+    fh.seek(0)
+    newCount = 0
+    newCount = str(newCount)
+    fh.write(newCount)
+    fh.truncate()
     fh.close()
-    print("Read Count: ", count)
+    # print("Read Count: ", count)
     workers = int(count/20) + 1
     # (?)
     containerList = dockEnv.containers.list(all)
-    numContainers = len(containerList)
 
     newContList = []
     for image in containerList:
-        if(image.attrs['Config']['Image'] not in ['zookeeper', 'python', 'postgres', 'rabbitmq', 'worker_worker']):
+        if(image.attrs['Config']['Image'] not in ['zookeeper', 'python', 'postgres', 'rabbitmq:3.8.3-alpine', 'worker_orchestrator']):
             newContList.append(image)
+
+    numContainers = len(newContList)
+
+    for contInd in range(numContainers):
+        if newContList[contInd].name == 'worker_worker_1':
+            newContList.pop(contInd)
+
+    # remove master
+    numContainers -= 1
+    
+    for cont in newContList:
+        print(cont.name)
 
     if numContainers > workers:
         extra = numContainers - workers
         while extra:
             print("Removing worker")
-            newContList[numContainers - 1].stop()
+            contToRem = newContList[-1]
+            contToRem.stop()
+            contToRem.remove()
+            newContList.pop(-1)
             numContainers -= 1
             extra -= 1
 
@@ -154,9 +174,25 @@ def spawnWorker():
         while extra:
             print("Adding worker")
             slaveDb = dockEnv.containers.run(
-                "postgres", "-p 5432", network="worker_default", environment={"POSTGRES_USER": "ubuntu", "POSTGRES_PASSWORD": "ride"}, detach=True)
-            dockEnv.containers.run("worker_worker", "python3 -u worker.py", links={
-                                   "rmq": "rmq"}, environment={"TYPE": "slave", "DBNAME": slaveDb.name}, network="worker_default", detach=True)
+                "postgres",
+                "-p 5432",
+                network="worker_default",
+                environment={"POSTGRES_USER": "ubuntu",
+                             "POSTGRES_PASSWORD": "ride"},
+                ports={'5432': None},
+                publish_all_ports=True,
+                detach=True)
+
+            slaveCon = dockEnv.containers.get(slaveDb.name)
+            dbHostName = slaveCon.attrs["Config"]['Hostname']
+
+            dockEnv.containers.run("worker_worker:latest",
+                                   'sh -c "sleep 20 && python3 -u worker.py"',
+                                   links={"rmq": "rmq"},
+                                   environment={
+                                       "TYPE": "slave", "DBNAME": dbHostName},
+                                   network="worker_default",
+                                   detach=True)
             numContainers += 1
             extra -= 1
     Timer(120, spawnWorker).start()
@@ -169,7 +205,7 @@ def killMaster():
         # dictionary of containers and the pids, cause we have to kill slave with highest pid
         cntrdict = dict()
         for image in containerList:
-            if(image.attrs['Config']['Image'] not in ['zookeeper', 'python', 'postgres', 'rabbitmq', 'worker_worker']):
+            if(image.attrs['Config']['Image'] not in ['zookeeper', 'python', 'postgres', 'rabbitmq:3.8.3-alpine', 'worker_orchestrator']):
                 # if('slave' not in image['Config']['Image'])
                 cntrdict[image] = image.attrs['State']['Pid']
         # gets the key of the min value. i.e. gets the container id of the lowest pid container
@@ -189,7 +225,7 @@ def killSlave():
         # dictionary of containers and the pids, cause we have to kill slave with highest pid
         cntrdict = dict()
         for image in containerList:
-            if(image.attrs['Config']['Image'] not in ['zookeeper', 'python', 'postgres', 'rabbitmq', 'worker_worker']):
+            if(image.attrs['Config']['Image'] not in ['zookeeper', 'python', 'postgres', 'rabbitmq:3.8.3-alpine', 'worker_orchestrator']):
                 cntrdict[image] = image.attrs['State']['Pid']
         # gets the key of the max value. i.e. gets the container id of the highest pid container
         maxcid = list(cntrdict.keys())[
@@ -206,7 +242,7 @@ def getWorkers():
         containerList = dockEnv.containers.list(all)  # list of containers
         pidlist = list()
         for image in containerList:
-            if image.attrs['Config']['Image'] not in ['zookeeper', 'python', 'postgres', 'rabbitmq', 'worker_worker']:
+            if image.attrs['Config']['Image'] not in ['zookeeper', 'python', 'postgres', 'rabbitmq:3.8.3-alpine', 'worker_orchestrator']:
                 pidlist.append(image.attrs['State']['Pid'])
         pidlist.sort()
         return jsonify(pidlist), 200
@@ -244,3 +280,4 @@ with app.app_context():
 if __name__ == '__main__':
     app.debug = True
     app.run(host='0.0.0.0', port='80', use_reloader=False)
+a
