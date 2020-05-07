@@ -27,6 +27,7 @@ services:
     environment:
       - TYPE=master
       - DBNAME=postgres_worker
+      - CREATED=NA
     volumes:
         - .:/tmp
     depends_on:

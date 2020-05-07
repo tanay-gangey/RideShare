@@ -10,10 +10,44 @@ from datetime import datetime
 from flask import Flask, jsonify, request
 from threading import Timer
 
+from model import doInit, Base, Ride, User
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+
 app = Flask(__name__)
 dockEnv = docker.from_env()
 dockClient = docker.DockerClient()
 # dockEnv = docker.DockerClient(base_url='unix:///var/run/docker.sock')
+
+def syncDB(dbName):
+    dbURI = doInit(dbName)
+    engine = create_engine(dbURI)
+    Session = sessionmaker(bind = engine)
+
+    Base.metadata.create_all(engine)
+    session = Session()
+    rides = session.query(Ride).all()
+    users = session.query(User).all()
+
+    newrides = list()
+    newusers = list()
+    for ride in rides:
+        newrides.append(ride.as_dict())
+
+    for user in users:
+        newusers.append(user.as_dict())
+
+    user_ride = [newrides,newusers]
+    print(rides,users)
+    connection = pika.BlockingConnection(
+    pika.ConnectionParameters(host='rmq'))
+    channel = connection.channel()
+    channel.exchange_declare(exchange='tempQ', exchange_type='fanout')
+    channel.basic_publish(
+            exchange='tempQ',
+            routing_key='',
+            body=json.dumps(user_ride))
 
 
 class readWriteReq:
@@ -82,7 +116,7 @@ def readDB():
     incCount()
     if not count:
         print("Starting Timer")
-        Timer(120, spawnWorker).start()
+        Timer(60, spawnWorker).start()
     if request.method == "POST":
         data = request.get_json()
         data = json.dumps(data)
@@ -137,7 +171,7 @@ def spawnWorker():
     fh.truncate()
     fh.close()
     # print("Read Count: ", count)
-    workers = int(count/20) + 1
+    workers = int(count/10) + 1
     # (?)
     containerList = dockEnv.containers.list(all)
 
@@ -163,8 +197,13 @@ def spawnWorker():
         while extra:
             print("Removing worker")
             contToRem = newContList[-1]
+            #dbToRem = contToRem.attrs["Config"]["Env"][1].split("=")[1]
+            #print(dbToRem)
             contToRem.stop()
             contToRem.remove()
+            #dbToRem = eval(dbToRem)
+            #dbToRem.stop()
+            #dbToRem.remove()
             newContList.pop(-1)
             numContainers -= 1
             extra -= 1
@@ -190,12 +229,40 @@ def spawnWorker():
                                    'sh -c "sleep 20 && python3 -u worker.py"',
                                    links={"rmq": "rmq"},
                                    environment={
-                                       "TYPE": "slave", "DBNAME": dbHostName},
+                                       "TYPE": "slave", "DBNAME": dbHostName, "CREATED":"NEW"},
                                    network="worker_default",
                                    detach=True)
+            
+            #syncDB("postgres_worker")
             numContainers += 1
             extra -= 1
-    Timer(120, spawnWorker).start()
+
+
+
+    Timer(60, spawnWorker).start()
+
+
+
+@app.route('/api/v1/db/sync',methods=["GET"])
+def syncDB():
+    print("IN SYNC SLAVE DB ACTUAL")
+    mdbURI = doInit("postgres_worker")
+    mengine = create_engine(mdbURI)
+    mSession = sessionmaker(bind = mengine)
+
+    Base.metadata.create_all(mengine)
+    msession = mSession()
+    rides = msession.query(Ride).all()
+    users = msession.query(User).all()
+    print(rides,users)
+    newrides = list()
+    newusers = list()
+    for ride in rides:
+        newrides.append(ride.as_dict())
+
+    for user in users:
+        newusers.append(user.as_dict())
+    return json.dumps([newrides,newusers])
 
 
 @app.route('/api/v1/crash/master', methods=["POST"])
@@ -265,7 +332,7 @@ with app.app_context():
     dockEnv.containers.run("worker_worker:latest",
                            'sh -c "sleep 20 && python3 -u worker.py"',
                            links={"rmq": "rmq"},
-                           environment={"TYPE": "slave", "DBNAME": dbHostName},
+                           environment={"TYPE": "slave", "DBNAME": dbHostName, "CREATED":"NEW"},
                            network="worker_default",
                            detach=True)
     print("Initial status: ", slaveDb.status)

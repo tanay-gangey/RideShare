@@ -1,5 +1,6 @@
 1) Add pandas + csv
 2) Add clear read count [Done]
-3) New slave-db sync
+3) New slave-db sync (do exchange)
 4) Test clear/crash
-5) 
+5) Change time and count back to og values
+6) kill postgres container

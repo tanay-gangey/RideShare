@@ -24,6 +24,9 @@ class User(Base):
     def __repr__(self):
         return f"User('{self.user_id}','{self.username}')"
 
+    def as_dict(self):
+       return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
 
 class Ride(Base):
     '''
@@ -42,3 +45,6 @@ class Ride(Base):
 
     def __repr__(self):
         return f"Ride('{self.ride_id}','{self.created_by}', '{self.source}', '{self.destination}')"
+
+    def as_dict(self):
+       return {c.name: getattr(self, c.name) for c in self.__table__.columns}

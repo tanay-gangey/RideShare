@@ -17,6 +17,8 @@ from sqlalchemy.orm import sessionmaker
 
 workerType = os.environ['TYPE']
 dbName = os.environ['DBNAME']
+workerStatus = os.environ['CREATED']
+
 
 dbURI = doInit(dbName)
 engine = create_engine(dbURI)
@@ -243,9 +245,43 @@ def readWrap(ch, method, props, body):
         correlation_id=props.correlation_id), body=str(readResponse))
     ch.basic_ack(delivery_tag=method.delivery_tag)
 
+
+
+def actualSync(users_rides):
+    global workerStatus
+    workerStatus = "OLD"
+    #print(users_rides)
+    print("Users:\n")
+    for users in users_rides[1]:
+        print(users["username"],users["password"])
+        newUser = User(username=users["username"], password=users["password"])
+        session.add(newUser)
+        session.commit()
+    print("Rides:\n")
+    for rides in users_rides[0]:
+        print(rides["created_by"],rides["username"],rides["timestamp"],rides["source"], rides["destination"])
+        newRide = Ride(created_by=rides["created_by"], username=rides["username"], timestamp=rides["timestamp"],source=rides["source"], destination=rides["destination"])
+        session.add(newRide)
+        session.commit()
+
+def syncDB(mdbName):
+    print("IN SYNC SLAVE DB ACTUAL")
+    pass_url="http://worker_orchestrator_1:80/api/v1/db/sync"
+    r=requests.get(url=pass_url)
+    resp=r.text
+    resp=json.loads(resp)
+    actualSync(resp)
+
+
+
 # Consume from readQ for Slave
 if workerType == 'slave':
-    print("In Slave!")
+    print("In Slave!",workerStatus)
+    if(workerStatus=="NEW"):
+        print("I AM NEW")
+        syncDB("postgres_worker")
+    print(workerStatus)
+
     channel.queue_declare(queue='readQ', durable=True)
     channel.queue_declare(queue='responseQ', durable=True)
     channel.basic_qos(prefetch_count=1)
