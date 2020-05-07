@@ -13,12 +13,70 @@ from threading import Timer
 from model import doInit, Base, Ride, User
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from kazoo.client import KazooClient
 
+
+def createNewSlave():
+    slaveDb = dockEnv.containers.run(
+        "postgres",
+        "-p 5432",
+        network="worker_default",
+        environment={"POSTGRES_USER": "ubuntu", "POSTGRES_PASSWORD": "ride"},
+        ports={'5432': None},
+        publish_all_ports=True,
+        detach=True)
+
+    slaveCon = dockEnv.containers.get(slaveDb.name)
+    dbHostName = slaveCon.attrs["Config"]['Hostname']
+
+    dockEnv.containers.run("worker_worker:latest",
+                           'sh -c "sleep 20 && python3 -u worker.py"',
+                           links={"rmq": "rmq"},
+                           environment={"TYPE": "slave", "DBNAME": dbHostName, "CREATED":"NEW"},
+                           network="worker_default",
+                           detach=True)
+
+# def createNewMaster():
+#     masterDb = dockEnv.containers.run(
+#         "postgres",
+#         "-p 5432",
+#         network="worker_default",
+#         environment={"POSTGRES_USER": "ubuntu", "POSTGRES_PASSWORD": "ride"},
+#         ports={'5432': None},
+#         publish_all_ports=True,
+#         detach=True)
+
+#     masterCon = dockEnv.containers.get(masterDb.name)
+#     dbHostName = masterCon.attrs["Config"]['Hostname']
+
+#     dockEnv.containers.run("worker_worker:latest",
+#                            'sh -c "sleep 20 && python3 -u worker.py"',
+#                            links={"rmq": "rmq"},
+#                            environment={"TYPE": "slave", "DBNAME": dbHostName, "CREATED":"NEW"},
+#                            network="worker_default",
+#                            detach=True)
+
+respawn = True
+noOfChildren = 0
+
+def slaves_watch():
+    if(respawn):
+        children = zk.get_children("/slaves", watch=slaves_watch)
+        if(noOfChildren > len(children)):
+            createNewSlave()
+        else:
+            noOfChildren = len(children)
 
 app = Flask(__name__)
 dockEnv = docker.from_env()
 dockClient = docker.DockerClient()
 # dockEnv = docker.DockerClient(base_url='unix:///var/run/docker.sock')
+
+zk = KazooClient(hosts='zoo:2181')
+zk.start()
+
+zk.ensure_path('/master')
+zk.ensure_path('/slaves')
 
 def syncDB(dbName):
     dbURI = doInit(dbName)
@@ -194,6 +252,7 @@ def spawnWorker():
 
     if numContainers > workers:
         extra = numContainers - workers
+        respawn = False
         while extra:
             print("Removing worker")
             contToRem = newContList[-1]
@@ -207,6 +266,7 @@ def spawnWorker():
             newContList.pop(-1)
             numContainers -= 1
             extra -= 1
+        respawn = True
 
     elif numContainers < workers:
         extra = workers - numContainers
@@ -317,6 +377,7 @@ def getWorkers():
 
 
 with app.app_context():
+   
     slaveDb = dockEnv.containers.run(
         "postgres",
         "-p 5432",
@@ -328,6 +389,16 @@ with app.app_context():
 
     slaveCon = dockEnv.containers.get(slaveDb.name)
     dbHostName = slaveCon.attrs["Config"]['Hostname']
+    
+    fh = open("slavesCount","r+")
+    count = int(fh.readline())
+    fh.seek(0)
+    newCount = 1
+    newCount = str(newCount)
+    fh.write(newCount)
+    fh.truncate()
+    fh.close()
+    containerList = dockEnv.containers.list(all)
 
     dockEnv.containers.run("worker_worker:latest",
                            'sh -c "sleep 20 && python3 -u worker.py"',
@@ -337,7 +408,7 @@ with app.app_context():
                            detach=True)
     print("Initial status: ", slaveDb.status)
     print("Created Master/Slave")
-    containerList = dockEnv.containers.list(all)
+ 
     for image in containerList:
         print(image.attrs['Config']['Image'], ":", image.name)
     # while(slaveDb.status != "running"):

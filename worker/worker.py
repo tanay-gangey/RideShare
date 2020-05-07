@@ -12,12 +12,14 @@ from model import doInit, Base, Ride, User
 from requests.models import Response
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from kazoo.client import KazooClient
 
 # Create tables in database
 
 workerType = os.environ['TYPE']
 dbName = os.environ['DBNAME']
 workerStatus = os.environ['CREATED']
+
 
 
 dbURI = doInit(dbName)
@@ -28,6 +30,8 @@ Base.metadata.create_all(engine)
 session = Session()
 
 print("Env Type: ", workerType)
+
+
 # ------------------------------------------------------------------------------------
 
 # Common Code [to Master & Slave]
@@ -36,6 +40,28 @@ print("Env Type: ", workerType)
 connection = pika.BlockingConnection(
     pika.ConnectionParameters(host='rmq'))
 channel = connection.channel()
+
+zk = KazooClient(hosts='zoo:2181')
+zk.start()
+
+
+def getSlavesCount():
+    fh = open("slavesCount", "r")
+    count = int(fh.readline())
+    fh.close()
+    print("Read Count: ", count)
+    return count
+
+
+def incSlavesCount():
+    fh = open("slavesCount", "r+")
+    count = int(fh.read())
+    fh.seek(0)
+    count += 1
+    count = str(count)
+    fh.write(count)
+    fh.truncate()
+    fh.close()
 
 def checkHash(password):
     if len(password) == 40:
@@ -131,6 +157,7 @@ def writeWrapMaster(ch, method, props, body):
 # Consume from writeQ for Master
 if workerType == 'master':
     print("In Master!")
+    zk.ensure_path('/master/node')
     channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
     channel.queue_declare(queue='writeQ', durable=True)
     channel.basic_consume(queue='writeQ', on_message_callback=writeWrapMaster)
@@ -276,6 +303,10 @@ def syncDB(mdbName):
 
 # Consume from readQ for Slave
 if workerType == 'slave':
+    name = str(getSlavesCount())
+    incSlavesCount()
+    zk.ensure_path('/slaves'+'/'+name)
+
     print("In Slave!",workerStatus)
     if(workerStatus=="NEW"):
         print("I AM NEW")
