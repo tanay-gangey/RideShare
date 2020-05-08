@@ -59,13 +59,27 @@ def createNewSlave():
 respawn = True
 noOfChildren = 0
 
+
+
 def slaves_watch():
-    if(respawn):
-        children = zk.get_children("/slaves", watch=slaves_watch)
-        if(noOfChildren > len(children)):
-            createNewSlave()
-        else:
-            noOfChildren = len(children)
+    flag = True
+    children = zk.get_children('/root',watch=slaves_watch)
+    for child in children:
+        data, stat = zk.get('/root/'+str(child))
+        if(data == "master"):
+            flag = False
+            break
+
+    if(flag):
+        minimum = min(children)
+        zk.set("/root/"+str(minimum),b"master")
+    else:
+        if(respawn):
+            if(noOfChildren > len(children)):
+                createNewSlave()
+            else:
+                noOfChildren = len(children)
+
 
 app = Flask(__name__)
 dockEnv = docker.from_env()
@@ -75,8 +89,10 @@ dockClient = docker.DockerClient()
 zk = KazooClient(hosts='zoo:2181')
 zk.start()
 
-zk.ensure_path('/master')
-zk.ensure_path('/slaves')
+
+zk.ensure_path('/root')
+
+children = zk.get_children('/root', watch=slaves_watch)
 
 def syncDB(dbName):
     dbURI = doInit(dbName)

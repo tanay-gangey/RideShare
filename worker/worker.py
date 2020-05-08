@@ -16,7 +16,39 @@ from kazoo.client import KazooClient
 
 # Create tables in database
 
+
+
+def somefunc():
+    data, stat = zk.get("/root/"+name, watch=somefunc)
+    channel.close()
+    if(data == "master"):
+        print("In Master!")
+        zk.create('/root/master',b'master',ephemeral=True)
+        data, stat = zk.get("/root/master", watch=electionFunction)
+        channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
+        channel.queue_declare(queue='writeQ', durable=True)
+        channel.basic_consume(queue='writeQ', on_message_callback=writeWrapMaster)
+        channel.start_consuming()
+
+
 workerType = os.environ['TYPE']
+
+
+        
+    
+
+if(workerType == "master"):
+    zk.create('/root/master',b'master',ephemeral=True)
+else:
+    name = str(getSlavesCount())
+    incSlavesCount()
+    zk.create('/root'+'/'+name,b'slave',ephemeral=True)
+    data, stat = zk.get("/root/"+name, watch=somefunc)
+    print("Version: %s, data: %s" % (stat.version, data.decode("utf-8")))
+
+
+
+
 dbName = os.environ['DBNAME']
 workerStatus = os.environ['CREATED']
 
@@ -303,9 +335,7 @@ def syncDB(mdbName):
 
 # Consume from readQ for Slave
 if workerType == 'slave':
-    name = str(getSlavesCount())
-    incSlavesCount()
-    zk.ensure_path('/slaves'+'/'+name)
+    
 
     print("In Slave!",workerStatus)
     if(workerStatus=="NEW"):
