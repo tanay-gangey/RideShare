@@ -16,19 +16,12 @@ from kazoo.client import KazooClient
 
 # Create tables in database
 
+zk = KazooClient(hosts='zoo:2181')
+zk.start_async()
 
 
-def somefunc():
-    data, stat = zk.get("/root/"+name, watch=somefunc)
-    channel.close()
-    if(data == "master"):
-        print("In Master!")
-        zk.create('/root/master',b'master',ephemeral=True)
-        data, stat = zk.get("/root/master", watch=electionFunction)
-        channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
-        channel.queue_declare(queue='writeQ', durable=True)
-        channel.basic_consume(queue='writeQ', on_message_callback=writeWrapMaster)
-        channel.start_consuming()
+
+
 
 
 workerType = os.environ['TYPE']
@@ -38,12 +31,12 @@ workerType = os.environ['TYPE']
     
 
 if(workerType == "master"):
-    zk.create('/root/master',b'master',ephemeral=True)
+    zk.create_async('/root/master',b'master',ephemeral=True)
 else:
     name = str(getSlavesCount())
     incSlavesCount()
-    zk.create('/root'+'/'+name,b'slave',ephemeral=True)
-    data, stat = zk.get("/root/"+name, watch=somefunc)
+    zk.create_async('/root'+'/'+name,b'slave',ephemeral=True)
+    data, stat = zk.get_async("/root/"+name, watch=somefunc)
     print("Version: %s, data: %s" % (stat.version, data.decode("utf-8")))
 
 
@@ -73,8 +66,17 @@ connection = pika.BlockingConnection(
     pika.ConnectionParameters(host='rmq'))
 channel = connection.channel()
 
-zk = KazooClient(hosts='zoo:2181')
-zk.start()
+
+def somefunc():
+    data, stat = zk.get_async("/root/"+name, watch=somefunc)
+    channel.close()
+    if(data == "master"):
+        print("In Master!")
+        zk.create_async('/root/master',b'master',ephemeral=True)
+        channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
+        channel.queue_declare(queue='writeQ', durable=True)
+        channel.basic_consume(queue='writeQ', on_message_callback=writeWrapMaster)
+        channel.start_consuming()
 
 
 def getSlavesCount():

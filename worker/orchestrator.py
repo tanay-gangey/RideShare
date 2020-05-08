@@ -59,13 +59,14 @@ def createNewSlave():
 respawn = True
 noOfChildren = 0
 
-
+zk = KazooClient(hosts='zoo:2181')
+zk.start_async()
 
 def slaves_watch():
     flag = True
-    children = zk.get_children('/root',watch=slaves_watch)
+    children = zk.get_children_async('/root',watch=slaves_watch)
     for child in children:
-        data, stat = zk.get('/root/'+str(child))
+        data, stat = zk.get_async('/root/'+str(child))
         if(data == "master"):
             flag = False
             break
@@ -86,13 +87,10 @@ dockEnv = docker.from_env()
 dockClient = docker.DockerClient()
 # dockEnv = docker.DockerClient(base_url='unix:///var/run/docker.sock')
 
-zk = KazooClient(hosts='zoo:2181')
-zk.start()
 
+zk.create_async('/root',b'root',ephemeral=True)
 
-zk.ensure_path('/root')
-
-children = zk.get_children('/root', watch=slaves_watch)
+children = zk.get_children_async('/root', watch=slaves_watch)
 
 def syncDB(dbName):
     dbURI = doInit(dbName)
