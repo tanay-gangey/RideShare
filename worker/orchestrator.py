@@ -16,6 +16,18 @@ from sqlalchemy.orm import sessionmaker
 from kazoo.client import KazooClient
 
 
+def incSlavesCount():
+    fh = open("slavesCount", "r+")
+    count = int(fh.read())
+    fh.seek(0)
+    count += 1
+    count = str(count)
+    print(count)
+    fh.write(count)
+    fh.truncate()
+    fh.close()
+
+
 def createNewSlave():
     slaveDb = dockEnv.containers.run(
         "postgres",
@@ -60,27 +72,35 @@ respawn = True
 noOfChildren = 0
 
 zk = KazooClient(hosts='zoo:2181')
-zk.start_async()
+zk.start()
 
-def slaves_watch():
+def slaves_watch(event):
+    incSlavesCount()
+    print("---------------------IM WATCHING YOUR SLAVES------------------------------")
+    global noOfChildren
+    global respawn
     flag = True
-    children = zk.get_children_async('/root',watch=slaves_watch)
+    children = zk.get_children('/root',watch=slaves_watch)
     for child in children:
-        data, stat = zk.get_async('/root/'+str(child))
+        data, stat = zk.get('/root/'+str(child))
+        data = data.decode("utf-8")
+        print(data, type(data))
         if(data == "master"):
             flag = False
             break
-
     if(flag):
         minimum = min(children)
+        print(minimum)
         zk.set("/root/"+str(minimum),b"master")
     else:
         if(respawn):
             if(noOfChildren > len(children)):
+                print("CREATING NEW SLAVE IN WATCH")
                 createNewSlave()
             else:
+                print("IM ELSE-ELSE")
                 noOfChildren = len(children)
-
+    print("no of children and len(children) respawn",noOfChildren,len(children),respawn,flag)
 
 app = Flask(__name__)
 dockEnv = docker.from_env()
@@ -88,9 +108,9 @@ dockClient = docker.DockerClient()
 # dockEnv = docker.DockerClient(base_url='unix:///var/run/docker.sock')
 
 
-zk.create_async('/root',b'root',ephemeral=True)
+zk.create('/root',b'root')
 
-children = zk.get_children_async('/root', watch=slaves_watch)
+children = zk.get_children('/root', watch=slaves_watch)
 
 def syncDB(dbName):
     dbURI = doInit(dbName)
@@ -233,6 +253,7 @@ def clearDB():
 
 
 def spawnWorker():
+    global respawn,noOfChildren
     # Find no. of read-counts
     fh = open("readCount", "r+")
     count = int(fh.readline())
@@ -277,10 +298,10 @@ def spawnWorker():
             #dbToRem = eval(dbToRem)
             #dbToRem.stop()
             #dbToRem.remove()
+            noOfChildren-=1
             newContList.pop(-1)
             numContainers -= 1
             extra -= 1
-        respawn = True
 
     elif numContainers < workers:
         extra = workers - numContainers
@@ -316,6 +337,14 @@ def spawnWorker():
     Timer(60, spawnWorker).start()
 
 
+@app.route('/api/v1/zoo/count',methods=["GET"])
+def getSCount():
+    fh = open("slavesCount", "r")
+    count = int(fh.readline())
+    fh.close()
+    print("Slave Count: ", count)
+    return json.dumps(count)
+
 
 @app.route('/api/v1/db/sync',methods=["GET"])
 def syncDB():
@@ -341,6 +370,8 @@ def syncDB():
 
 @app.route('/api/v1/crash/master', methods=["POST"])
 def killMaster():
+    global respawn
+    respawn = True
     if request.method == "POST":
         containerList = dockEnv.containers.list(all)
         # dictionary of containers and the pids, cause we have to kill slave with highest pid
@@ -354,13 +385,15 @@ def killMaster():
             list(cntrdict.values()).index(min(list(cntrdict.values())))]
         mincid.kill()
         mincid.remove(v=True)
-        return 200
-    return 405
+        return {}, 200
+    return {}, 405
 
 
 # im assuming we get a list of containers,  i've added sample-getcontainerpid.py for reference if this is not the case, to get the list of just slave containers we'll need zookeeper idk how to do that
 @app.route('/api/v1/crash/slave', methods=["POST"])
 def killSlave():
+    global respawn
+    respawn = True
     if request.method == "POST":
         containerList = dockEnv.containers.list(all)
         # dictionary of containers and the pids, cause we have to kill slave with highest pid
@@ -373,8 +406,8 @@ def killSlave():
             list(cntrdict.values()).index(max(list(cntrdict.values())))]
         maxcid.kill()  # kill that container
         maxcid.remove(v=True)
-        return 200
-    return 405
+        return {}, 200
+    return {}, 405
 
 
 @app.route('/api/v1/worker/list', methods=["GET"])
@@ -391,7 +424,7 @@ def getWorkers():
 
 
 with app.app_context():
-   
+    print("Creating slave")
     slaveDb = dockEnv.containers.run(
         "postgres",
         "-p 5432",
@@ -400,21 +433,12 @@ with app.app_context():
         ports={'5432': None},
         publish_all_ports=True,
         detach=True)
-
+    print(slaveDb.name)
     slaveCon = dockEnv.containers.get(slaveDb.name)
     dbHostName = slaveCon.attrs["Config"]['Hostname']
     
-    fh = open("slavesCount","r+")
-    count = int(fh.readline())
-    fh.seek(0)
-    newCount = 1
-    newCount = str(newCount)
-    fh.write(newCount)
-    fh.truncate()
-    fh.close()
-    containerList = dockEnv.containers.list(all)
 
-    dockEnv.containers.run("worker_worker:latest",
+    slave = dockEnv.containers.run("worker_worker:latest",
                            'sh -c "sleep 20 && python3 -u worker.py"',
                            links={"rmq": "rmq"},
                            environment={"TYPE": "slave", "DBNAME": dbHostName, "CREATED":"NEW"},
@@ -422,7 +446,9 @@ with app.app_context():
                            detach=True)
     print("Initial status: ", slaveDb.status)
     print("Created Master/Slave")
- 
+    print(slave.name)
+    containerList = dockEnv.containers.list(all)
+
     for image in containerList:
         print(image.attrs['Config']['Image'], ":", image.name)
     # while(slaveDb.status != "running"):

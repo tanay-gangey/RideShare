@@ -14,30 +14,71 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from kazoo.client import KazooClient
 
-# Create tables in database
+
+# ------------------------------------------------------------------------------------
+
+# Common Code [to Master & Slave]
+
+# Connecting to the RabbitMQ container
 
 zk = KazooClient(hosts='zoo:2181')
-zk.start_async()
-
-
-
-
+zk.start()
 
 
 workerType = os.environ['TYPE']
+ 
 
 
-        
-    
+dbName = os.environ['DBNAME']
+workerStatus = os.environ['CREATED']
+
+
+
+dbURI = doInit(dbName)
+engine = create_engine(dbURI)
+Session = sessionmaker(bind = engine)
+
+Base.metadata.create_all(engine)
+session = Session()
+
+print("Env Type: ", workerType)
+
+
+connection = pika.BlockingConnection(
+    pika.ConnectionParameters(host='rmq'))
+channel = connection.channel()
+
+
+
+def somefunc(event):
+    print("---------------------IM WATCHING YOUR SLAVES IN WORKER------------------------------")
+    data, stat = zk.get("/root/"+name, watch=somefunc)
+    data = data.decode("utf-8") 
+    channel.close()
+    if(data == "master"):
+        print("In Master!")
+        zk.create('/root/master',b'master',ephemeral=True)
+        channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
+        channel.queue_declare(queue='writeQ', durable=True)
+        channel.basic_consume(queue='writeQ', on_message_callback=writeWrapMaster)
+        channel.start_consuming()
+
+def getSlavesCount():
+    print("IN GET SLAVES COUNT")
+    pass_url="http://worker_orchestrator_1:80/api/v1/zoo/count"
+    r=requests.get(url=pass_url)
+    resp=r.text
+    resp=json.loads(resp)
+    return resp
 
 if(workerType == "master"):
-    zk.create_async('/root/master',b'master',ephemeral=True)
+    zk.create('/root/master',b'master',ephemeral=True)
 else:
     name = str(getSlavesCount())
-    incSlavesCount()
-    zk.create_async('/root'+'/'+name,b'slave',ephemeral=True)
-    data, stat = zk.get_async("/root/"+name, watch=somefunc)
-    print("Version: %s, data: %s" % (stat.version, data.decode("utf-8")))
+    zk.create('/root'+'/'+name,b'slave',ephemeral=True)
+    data, stat = zk.get("/root/"+name, watch=somefunc)
+    data = data.decode("utf-8") 
+    print("data: %s" % (data))
 
 
 
@@ -67,35 +108,6 @@ connection = pika.BlockingConnection(
 channel = connection.channel()
 
 
-def somefunc():
-    data, stat = zk.get_async("/root/"+name, watch=somefunc)
-    channel.close()
-    if(data == "master"):
-        print("In Master!")
-        zk.create_async('/root/master',b'master',ephemeral=True)
-        channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
-        channel.queue_declare(queue='writeQ', durable=True)
-        channel.basic_consume(queue='writeQ', on_message_callback=writeWrapMaster)
-        channel.start_consuming()
-
-
-def getSlavesCount():
-    fh = open("slavesCount", "r")
-    count = int(fh.readline())
-    fh.close()
-    print("Read Count: ", count)
-    return count
-
-
-def incSlavesCount():
-    fh = open("slavesCount", "r+")
-    count = int(fh.read())
-    fh.seek(0)
-    count += 1
-    count = str(count)
-    fh.write(count)
-    fh.truncate()
-    fh.close()
 
 def checkHash(password):
     if len(password) == 40:
