@@ -15,6 +15,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from kazoo.client import KazooClient
 
+master = "worker_worker_1"
+
+def getSlavesCount():
+    fh = open("slavesCount", "r")
+    count = int(fh.readline())
+    fh.close()
+    return count
 
 def incSlavesCount():
     fh = open("slavesCount", "r+")
@@ -29,6 +36,7 @@ def incSlavesCount():
 
 
 def createNewSlave():
+    
     slaveDb = dockEnv.containers.run(
         "postgres",
         "-p 5432",
@@ -40,14 +48,17 @@ def createNewSlave():
 
     slaveCon = dockEnv.containers.get(slaveDb.name)
     dbHostName = slaveCon.attrs["Config"]['Hostname']
-
-    dockEnv.containers.run("worker_worker:latest",
+    
+    newCon = dockEnv.containers.run("worker_worker:latest",
                            'sh -c "sleep 20 && python3 -u worker.py"',
                            links={"rmq": "rmq"},
                            environment={"TYPE": "slave", "DBNAME": dbHostName, "CREATED":"NEW"},
                            network="worker_default",
-                           detach=True)
+                           detach=True,name="worker_worker_"+str(getSlavesCount()))
+    # while(newCon.status != "running"):
+    #     pass
 
+    incSlavesCount()
 # def createNewMaster():
 #     masterDb = dockEnv.containers.run(
 #         "postgres",
@@ -75,9 +86,9 @@ zk = KazooClient(hosts='zoo:2181')
 zk.start()
 
 def slaves_watch(event):
-    incSlavesCount()
+    
     print("---------------------IM WATCHING YOUR SLAVES------------------------------")
-    global noOfChildren
+    global noOfChildren, master
     global respawn
     flag = True
     children = zk.get_children('/root',watch=slaves_watch)
@@ -90,12 +101,16 @@ def slaves_watch(event):
             break
     if(flag):
         print(children)
-        children = list(map(int,children))
+        children = list(map(int, children))
         minimum = min(children)
         print(minimum)
+        
         zk.set("/root/"+str(minimum),b"master")
+        master = "worker_worker_"+ str(minimum)
+    
         createNewSlave()
     else:
+        print(children)
         if(respawn):
             if(noOfChildren > len(children)):
                 print("CREATING NEW SLAVE IN WATCH")
@@ -104,6 +119,7 @@ def slaves_watch(event):
                 print("IM ELSE-ELSE")
                 noOfChildren = len(children)
     print("no of children and len(children) respawn",noOfChildren,len(children),respawn,flag)
+    
 
 app = Flask(__name__)
 dockEnv = docker.from_env()
@@ -115,34 +131,34 @@ zk.create('/root',b'root')
 
 children = zk.get_children('/root', watch=slaves_watch)
 
-def syncDB(dbName):
-    dbURI = doInit(dbName)
-    engine = create_engine(dbURI)
-    Session = sessionmaker(bind = engine)
+# def syncDB(dbName):
+#     dbURI = doInit(dbName)
+#     engine = create_engine(dbURI)
+#     Session = sessionmaker(bind = engine)
 
-    Base.metadata.create_all(engine)
-    session = Session()
-    rides = session.query(Ride).all()
-    users = session.query(User).all()
+#     Base.metadata.create_all(engine)
+#     session = Session()
+#     rides = session.query(Ride).all()
+#     users = session.query(User).all()
 
-    newrides = list()
-    newusers = list()
-    for ride in rides:
-        newrides.append(ride.as_dict())
+#     newrides = list()
+#     newusers = list()
+#     for ride in rides:
+#         newrides.append(ride.as_dict())
 
-    for user in users:
-        newusers.append(user.as_dict())
+#     for user in users:
+#         newusers.append(user.as_dict())
 
-    user_ride = [newrides,newusers]
-    print(rides,users)
-    connection = pika.BlockingConnection(
-    pika.ConnectionParameters(host='rmq'))
-    channel = connection.channel()
-    channel.exchange_declare(exchange='tempQ', exchange_type='fanout')
-    channel.basic_publish(
-            exchange='tempQ',
-            routing_key='',
-            body=json.dumps(user_ride))
+#     user_ride = [newrides,newusers]
+#     print(rides,users)
+#     connection = pika.BlockingConnection(
+#     pika.ConnectionParameters(host='rmq'))
+#     channel = connection.channel()
+#     channel.exchange_declare(exchange='tempQ', exchange_type='fanout')
+#     channel.basic_publish(
+#             exchange='tempQ',
+#             routing_key='',
+#             body=json.dumps(user_ride))
 
 
 class readWriteReq:
@@ -256,7 +272,7 @@ def clearDB():
 
 
 def spawnWorker():
-    global respawn,noOfChildren
+    global respawn,noOfChildren,master
     # Find no. of read-counts
     fh = open("readCount", "r+")
     count = int(fh.readline())
@@ -279,7 +295,7 @@ def spawnWorker():
     numContainers = len(newContList)
 
     for contInd in range(numContainers):
-        if newContList[contInd].name == 'worker_worker_1':
+        if newContList[contInd].name == master:
             newContList.pop(contInd)
 
     # remove master
@@ -308,8 +324,12 @@ def spawnWorker():
 
     elif numContainers < workers:
         extra = workers - numContainers
+        incSlavesCount()
         while extra:
             print("Adding worker")
+            
+            
+            print("Container name is :",getSlavesCount())
             slaveDb = dockEnv.containers.run(
                 "postgres",
                 "-p 5432",
@@ -322,15 +342,20 @@ def spawnWorker():
 
             slaveCon = dockEnv.containers.get(slaveDb.name)
             dbHostName = slaveCon.attrs["Config"]['Hostname']
-
-            dockEnv.containers.run("worker_worker:latest",
+            
+            newCon = dockEnv.containers.run("worker_worker:latest",
                                    'sh -c "sleep 20 && python3 -u worker.py"',
                                    links={"rmq": "rmq"},
                                    environment={
                                        "TYPE": "slave", "DBNAME": dbHostName, "CREATED":"NEW"},
                                    network="worker_default",
-                                   detach=True)
-            
+                                   detach=True,name="worker_worker_"+str(getSlavesCount()))
+            print(newCon.status)
+            # while(newCon.status != "running"):
+                
+            #     pass
+
+            incSlavesCount()
             #syncDB("postgres_worker")
             numContainers += 1
             extra -= 1
@@ -446,11 +471,13 @@ with app.app_context():
                            links={"rmq": "rmq"},
                            environment={"TYPE": "slave", "DBNAME": dbHostName, "CREATED":"NEW"},
                            network="worker_default",
-                           detach=True)
+                           detach=True,name="worker_worker_2")
     print("Initial status: ", slaveDb.status)
     print("Created Master/Slave")
     print(slave.name)
     containerList = dockEnv.containers.list(all)
+    
+  
 
     for image in containerList:
         print(image.attrs['Config']['Image'], ":", image.name)
@@ -461,4 +488,3 @@ with app.app_context():
 if __name__ == '__main__':
     app.debug = True
     app.run(host='0.0.0.0', port='80', use_reloader=False)
-a
