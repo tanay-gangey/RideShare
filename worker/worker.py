@@ -44,24 +44,24 @@ session = Session()
 print("Env Type: ", workerType)
 
 
-connection = pika.BlockingConnection(
-    pika.ConnectionParameters(host='rmq'))
-channel = connection.channel()
-
 
 
 def somefunc(event):
     print("---------------------IM WATCHING YOUR SLAVES IN WORKER------------------------------")
     data, stat = zk.get("/root/"+name, watch=somefunc)
-    data = data.decode("utf-8") 
-    channel.close()
-    if(data == "master"):
-        print("In Master!")
-        zk.create('/root/master',b'master',ephemeral=True)
-        channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
-        channel.queue_declare(queue='writeQ', durable=True)
-        channel.basic_consume(queue='writeQ', on_message_callback=writeWrapMaster)
-        channel.start_consuming()
+    data = data.decode("utf-8")
+    #connection.close()
+    workerType = "master" 
+    initworker(workerType)
+    # connection.close()
+    # connection1 = pika.BlockingConnection(pika.ConnectionParameters(host='rmq'))
+    # channel = connection1.channel()
+    # if(data == "master"):
+    #     print("In Master!")
+    #     channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
+    #     channel.queue_declare(queue='writeQ', durable=True)
+    #     channel.basic_consume(queue='writeQ', on_message_callback=writeWrapMaster)
+    #     channel.start_consuming()
 
 def getSlavesCount():
     print("IN GET SLAVES COUNT")
@@ -79,33 +79,6 @@ else:
     data, stat = zk.get("/root/"+name, watch=somefunc)
     data = data.decode("utf-8") 
     print("data: %s" % (data))
-
-
-
-
-dbName = os.environ['DBNAME']
-workerStatus = os.environ['CREATED']
-
-
-
-dbURI = doInit(dbName)
-engine = create_engine(dbURI)
-Session = sessionmaker(bind = engine)
-
-Base.metadata.create_all(engine)
-session = Session()
-
-print("Env Type: ", workerType)
-
-
-# ------------------------------------------------------------------------------------
-
-# Common Code [to Master & Slave]
-
-# Connecting to the RabbitMQ container
-connection = pika.BlockingConnection(
-    pika.ConnectionParameters(host='rmq'))
-channel = connection.channel()
 
 
 
@@ -191,7 +164,7 @@ def writeDB(req):
 def writeWrapMaster(ch, method, props, body):
     body = json.dumps(eval(body.decode()))
     writeDB(body)
-    channel.basic_publish(exchange='syncQ', routing_key='', body=body, properties=pika.BasicProperties(
+    ch.basic_publish(exchange='syncQ', routing_key='', body=body, properties=pika.BasicProperties(
         reply_to=props.reply_to,
         correlation_id=props.correlation_id,
         delivery_mode=2))
@@ -201,14 +174,6 @@ def writeWrapMaster(ch, method, props, body):
     # ch.basic_ack(delivery_tag=method.delivery_tag)
 
 # Consume from writeQ for Master
-if workerType == 'master':
-    print("In Master!")
-    zk.ensure_path('/master/node')
-    channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
-    channel.queue_declare(queue='writeQ', durable=True)
-    channel.basic_consume(queue='writeQ', on_message_callback=writeWrapMaster)
-    channel.start_consuming()
-
 # -----------------------------------------------------------------------------------
 
 # Slave Code
@@ -217,7 +182,7 @@ def writeWrapSlave(ch, method, props, body):
     print("In write wrap slave")
     body = json.dumps(eval(body.decode()))
     writeResponse = writeDB(body)
-    channel.basic_publish(exchange='', routing_key='responseQ', properties=pika.BasicProperties(
+    ch.basic_publish(exchange='', routing_key='responseQ', properties=pika.BasicProperties(
         correlation_id=props.correlation_id,  delivery_mode=2), body=str(writeResponse))
 
 def timeAhead(timestamp):
@@ -314,7 +279,7 @@ def readWrap(ch, method, props, body):
     print("In readwrap")
     body = json.dumps(eval(body.decode()))
     readResponse = readDB(body)
-    channel.basic_publish(exchange='', routing_key='responseQ', properties=pika.BasicProperties(
+    ch.basic_publish(exchange='', routing_key='responseQ', properties=pika.BasicProperties(
         correlation_id=props.correlation_id), body=str(readResponse))
     ch.basic_ack(delivery_tag=method.delivery_tag)
 
@@ -346,29 +311,40 @@ def syncDB(mdbName):
     actualSync(resp)
 
 
+def initworker(workerType):
+    if workerType == 'master':
+        print("In Master!")
+        connection = pika.BlockingConnection(pika.ConnectionParameters(host='rmq'))
+        channel = connection.channel()
+        channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
+        channel.queue_declare(queue='writeQ', durable=True)
+        channel.basic_consume(queue='writeQ', on_message_callback=writeWrapMaster)
+        channel.start_consuming()
 
 # Consume from readQ for Slave
-if workerType == 'slave':
-    
+    if workerType == 'slave':
+        
+        connection = pika.BlockingConnection(pika.ConnectionParameters(host='rmq'))
+        channel = connection.channel()
+        print("In Slave!",workerStatus)
+        if(workerStatus=="NEW"):
+            print("I AM NEW")
+            syncDB("postgres_worker")
+        print(workerStatus)
 
-    print("In Slave!",workerStatus)
-    if(workerStatus=="NEW"):
-        print("I AM NEW")
-        syncDB("postgres_worker")
-    print(workerStatus)
+        channel.queue_declare(queue='readQ', durable=True)
+        channel.queue_declare(queue='responseQ', durable=True)
+        channel.basic_qos(prefetch_count=1)
 
-    channel.queue_declare(queue='readQ', durable=True)
-    channel.queue_declare(queue='responseQ', durable=True)
-    channel.basic_qos(prefetch_count=1)
+        # Sync database with master
+        channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
+        result = channel.queue_declare(queue='', exclusive=True, durable='True')
+        queue_name = result.method.queue
+        channel.basic_consume(queue=queue_name, on_message_callback=writeWrapSlave, auto_ack=True)
+        channel.queue_bind(exchange='syncQ', queue=queue_name)
 
-    # Sync database with master
-    channel.exchange_declare(exchange='syncQ', exchange_type='fanout')
-    result = channel.queue_declare(queue='', exclusive=True, durable='True')
-    queue_name = result.method.queue
-    channel.basic_consume(queue=queue_name, on_message_callback=writeWrapSlave, auto_ack=True)
-    channel.queue_bind(exchange='syncQ', queue=queue_name)
-
-    # Read after sync
-    channel.basic_consume(queue='readQ', on_message_callback=readWrap)
-    channel.start_consuming()
+        # Read after sync
+        channel.basic_consume(queue='readQ', on_message_callback=readWrap)
+        channel.start_consuming()
 # -----------------------------------------------------------------------------------
+initworker(workerType)

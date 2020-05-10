@@ -89,9 +89,12 @@ def slaves_watch(event):
             flag = False
             break
     if(flag):
+        print(children)
+        children = list(map(int,children))
         minimum = min(children)
         print(minimum)
         zk.set("/root/"+str(minimum),b"master")
+        createNewSlave()
     else:
         if(respawn):
             if(noOfChildren > len(children)):
