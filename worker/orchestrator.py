@@ -59,25 +59,6 @@ def createNewSlave():
     #     pass
 
     incSlavesCount()
-# def createNewMaster():
-#     masterDb = dockEnv.containers.run(
-#         "postgres",
-#         "-p 5432",
-#         network="worker_default",
-#         environment={"POSTGRES_USER": "ubuntu", "POSTGRES_PASSWORD": "ride"},
-#         ports={'5432': None},
-#         publish_all_ports=True,
-#         detach=True)
-
-#     masterCon = dockEnv.containers.get(masterDb.name)
-#     dbHostName = masterCon.attrs["Config"]['Hostname']
-
-#     dockEnv.containers.run("worker_worker:latest",
-#                            'sh -c "sleep 20 && python3 -u worker.py"',
-#                            links={"rmq": "rmq"},
-#                            environment={"TYPE": "slave", "DBNAME": dbHostName, "CREATED":"NEW"},
-#                            network="worker_default",
-#                            detach=True)
 
 respawn = True
 noOfChildren = 0
@@ -124,42 +105,9 @@ def slaves_watch(event):
 app = Flask(__name__)
 dockEnv = docker.from_env()
 dockClient = docker.DockerClient()
-# dockEnv = docker.DockerClient(base_url='unix:///var/run/docker.sock')
-
-
 zk.create('/root',b'root')
 
 children = zk.get_children('/root', watch=slaves_watch)
-
-# def syncDB(dbName):
-#     dbURI = doInit(dbName)
-#     engine = create_engine(dbURI)
-#     Session = sessionmaker(bind = engine)
-
-#     Base.metadata.create_all(engine)
-#     session = Session()
-#     rides = session.query(Ride).all()
-#     users = session.query(User).all()
-
-#     newrides = list()
-#     newusers = list()
-#     for ride in rides:
-#         newrides.append(ride.as_dict())
-
-#     for user in users:
-#         newusers.append(user.as_dict())
-
-#     user_ride = [newrides,newusers]
-#     print(rides,users)
-#     connection = pika.BlockingConnection(
-#     pika.ConnectionParameters(host='rmq'))
-#     channel = connection.channel()
-#     channel.exchange_declare(exchange='tempQ', exchange_type='fanout')
-#     channel.basic_publish(
-#             exchange='tempQ',
-#             routing_key='',
-#             body=json.dumps(user_ride))
-
 
 class readWriteReq:
     def __init__(self, publishQueue):
@@ -260,8 +208,7 @@ def writeDB():
 def clearDB():
     response = None
     if request.method == "POST":
-        data = request.get_json()
-        data = json.dumps(data)
+        data = {"table":"both", "caller":"clearData"}
         newClearReq = readWriteReq('writeQ')
         response = newClearReq.publish(data).decode()
         response = eval(response)
@@ -310,13 +257,8 @@ def spawnWorker():
         while extra:
             print("Removing worker")
             contToRem = newContList[-1]
-            #dbToRem = contToRem.attrs["Config"]["Env"][1].split("=")[1]
-            #print(dbToRem)
             contToRem.stop()
             contToRem.remove()
-            #dbToRem = eval(dbToRem)
-            #dbToRem.stop()
-            #dbToRem.remove()
             noOfChildren-=1
             newContList.pop(-1)
             numContainers -= 1
@@ -481,9 +423,6 @@ with app.app_context():
 
     for image in containerList:
         print(image.attrs['Config']['Image'], ":", image.name)
-    # while(slaveDb.status != "running"):
-        # print(slaveDb.status)
-        # print(image.attrs)
 
 if __name__ == '__main__':
     app.debug = True

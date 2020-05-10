@@ -27,12 +27,8 @@ zk.start()
 
 workerType = os.environ['TYPE']
  
-
-
 dbName = os.environ['DBNAME']
 workerStatus = os.environ['CREATED']
-
-
 
 dbURI = doInit(dbName)
 engine = create_engine(dbURI)
@@ -85,23 +81,6 @@ else:
     data, stat = zk.get("/root/"+name, watch=somefunc)
     data = data.decode("utf-8") 
     print("data: %s" % (data))
-
-
-
-
-# dbName = os.environ['DBNAME']
-# workerStatus = os.environ['CREATED']
-
-
-
-# dbURI = doInit(dbName)
-# engine = create_engine(dbURI)
-# Session = sessionmaker(bind = engine)
-
-# Base.metadata.create_all(engine)
-# session = Session()
-
-# print("Env Type: ", workerType)
 
 
 # # ------------------------------------------------------------------------------------
@@ -236,7 +215,19 @@ def timeAhead(timestamp):
 
 def readDB(req):
     data = json.loads(req)
-    if data["table"] == "User":
+
+    if data["table"] == "both":
+        responseToReturn = Response()
+        if len(session.query(User).all()) or len(session.query(Ride).all()):
+            session.query(User).all().delete()
+            session.query(Ride).all().delete()
+            session.commit()
+            responseToReturn.status_code = 200
+        else:
+            responseToReturn.status_code = 400
+        return (responseToReturn.text, responseToReturn.status_code)
+
+    elif data["table"] == "User":
         checkUserSet = {"removeUser", "createRide"}
         if data["caller"] in checkUserSet:
             userExists = session.query(User).filter_by(username = data["username"]).all()
@@ -324,8 +315,6 @@ def readWrap(ch, method, props, body):
         correlation_id=props.correlation_id), body=str(readResponse))
     ch.basic_ack(delivery_tag=method.delivery_tag)
 
-
-
 def actualSync(users_rides):
     global workerStatus
     workerStatus = "OLD"
@@ -351,13 +340,9 @@ def syncDB(mdbName):
     resp=json.loads(resp)
     actualSync(resp)
 
-
-
 # Consume from readQ for Slave
 if workerType == 'slave':
-    
-
-    print("In Slave!",workerStatus)
+    print("In Slave!", workerStatus)
     if(workerStatus=="NEW"):
         print("I AM NEW")
         syncDB("postgres_worker")
